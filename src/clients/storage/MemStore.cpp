@@ -53,7 +53,7 @@ bool MemStore::exists(const std::string& key) {
 
 StatusOr<std::unique_ptr<MemStoreCursor>> MemStore::createScanCursor(const std::string& prefix) {
   std::lock_guard<std::mutex> lock(mutex_);
-  
+
   if (data_.empty()) {
     return std::make_unique<MemStoreCursor>();
   }
@@ -76,9 +76,9 @@ StatusOr<std::pair<std::string, std::string>> MemStore::scanNext(MemStoreCursor*
   if (cursor == nullptr) {
     return Status::Error("Cursor is null");
   }
-  
+
   std::lock_guard<std::mutex> lock(mutex_);
-  
+
   if (!cursor->isValid()) {
     return Status::Error("Cursor is invalid");
   }
@@ -90,7 +90,7 @@ StatusOr<std::pair<std::string, std::string>> MemStore::scanNext(MemStoreCursor*
   }
 
   std::pair<std::string, std::string> result = *it;
-  
+
   // Move cursor to next key
   ++it;
   if (it != data_.end()) {
@@ -106,7 +106,7 @@ bool MemStore::hasNext(MemStoreCursor* cursor) {
   if (cursor == nullptr || !cursor->isValid()) {
     return false;
   }
-  
+
   std::lock_guard<std::mutex> lock(mutex_);
   return data_.find(cursor->getCurrentKey()) != data_.end();
 }
@@ -141,7 +141,7 @@ void MemStore::dump() {
   std::lock_guard<std::mutex> lock(mutex_);
   LOG(INFO) << "MemStore dump (" << data_.size() << " entries):";
   for (const auto& kv : data_) {
-    LOG(INFO) << "  " << kv.first << " -> " << kv.second.substr(0, 100) 
+    LOG(INFO) << "  " << kv.first << " -> " << kv.second.substr(0, 100)
               << (kv.second.length() > 100 ? "..." : "");
   }
 }

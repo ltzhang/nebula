@@ -17,7 +17,7 @@ class MemStoreTest : public ::testing::Test {
   void SetUp() override {
     MemStore::instance()->clear();
   }
-  
+
   void TearDown() override {
     MemStore::instance()->clear();
   }
@@ -25,21 +25,21 @@ class MemStoreTest : public ::testing::Test {
 
 TEST_F(MemStoreTest, BasicOperations) {
   auto* store = MemStore::instance();
-  
+
   // Test put and get
   ASSERT_TRUE(store->put("key1", "value1").ok());
   auto result = store->get("key1");
   ASSERT_TRUE(result.ok());
   ASSERT_EQ("value1", result.value());
-  
+
   // Test exists
   ASSERT_TRUE(store->exists("key1"));
   ASSERT_FALSE(store->exists("nonexistent"));
-  
+
   // Test remove
   ASSERT_TRUE(store->remove("key1").ok());
   ASSERT_FALSE(store->exists("key1"));
-  
+
   // Test batch operations
   std::vector<std::pair<std::string, std::string>> kvs = {
     {"batch1", "value1"},
@@ -48,7 +48,7 @@ TEST_F(MemStoreTest, BasicOperations) {
   };
   ASSERT_TRUE(store->batchPut(kvs).ok());
   ASSERT_EQ(3, store->size());
-  
+
   // Test batch remove
   std::vector<std::string> keys = {"batch1", "batch3"};
   ASSERT_TRUE(store->batchRemove(keys).ok());
@@ -58,32 +58,32 @@ TEST_F(MemStoreTest, BasicOperations) {
 
 TEST_F(MemStoreTest, CursorScan) {
   auto* store = MemStore::instance();
-  
+
   // Add some test data
   store->put("prefix:key1", "value1");
   store->put("prefix:key2", "value2");
   store->put("prefix:key3", "value3");
   store->put("other:key4", "value4");
-  
+
   // Test scan with prefix
   auto cursorResult = store->createScanCursor("prefix:");
   ASSERT_TRUE(cursorResult.ok());
   auto cursor = std::move(cursorResult.value());
-  
+
   int count = 0;
   while (store->hasNext(cursor.get())) {
     auto kvResult = store->scanNext(cursor.get());
     ASSERT_TRUE(kvResult.ok());
     auto kv = kvResult.value();
-    ASSERT_TRUE(kv.first.find("prefix:") == 0);
+    ASSERT_EQ(0, kv.first.find("prefix:"));
     count++;
   }
   ASSERT_EQ(3, count);
-  
+
   // Test scan all
   auto allCursor = store->createScanCursor();
   ASSERT_TRUE(allCursor.ok());
-  
+
   count = 0;
   while (store->hasNext(allCursor.value().get())) {
     auto kvResult = store->scanNext(allCursor.value().get());
@@ -96,12 +96,12 @@ TEST_F(MemStoreTest, CursorScan) {
 TEST_F(MemStoreTest, MemStorageClientBasic) {
   auto ioThreadPool = std::make_shared<folly::IOThreadPoolExecutor>(1);
   MemStorageClient client(ioThreadPool, nullptr);
-  
+
   // Test basic KV operations
   std::vector<KeyValue> kvs = {{"test_key", "test_value"}};
   auto putResult = client.put(1, std::move(kvs)).get();
   ASSERT_TRUE(putResult.succeeded());
-  
+
   std::vector<std::string> keys = {"test_key"};
   auto getResult = client.get(1, std::move(keys)).get();
   ASSERT_TRUE(getResult.succeeded());

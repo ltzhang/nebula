@@ -46,7 +46,7 @@ class MemStorageClient {
   MemStorageClient(std::shared_ptr<folly::IOThreadPoolExecutor> ioThreadPool,
                    meta::MetaClient* metaClient)
       : ioThreadPool_(ioThreadPool), metaClient_(metaClient) {}
-  
+
   virtual ~MemStorageClient() = default;
 
   // Vertex operations
@@ -161,13 +161,13 @@ class MemStorageClient {
  private:
   // Helper methods for key generation
   std::string generateVertexKey(GraphSpaceID space, const Value& vid, TagID tag);
-  std::string generateEdgeKey(GraphSpaceID space, const Value& src, EdgeType type, 
+  std::string generateEdgeKey(GraphSpaceID space, const Value& src, EdgeType type,
                               int64_t rank, const Value& dst);
-  
+
   // Helper methods for response creation
   template<typename T>
   MemStorageRpcRespFuture<T> makeSuccessResponse(T response);
-  
+
   template<typename T>
   MemStorageRpcRespFuture<T> makeErrorResponse(const std::string& error);
 

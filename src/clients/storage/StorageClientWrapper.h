@@ -43,7 +43,8 @@ class StorageClientWrapper {
                    std::unordered_map<TagID, std::vector<std::string>> propNames,
                    bool ifNotExists,
                    bool ignoreExistedIndex) {
-    return client_.addVertices(param, std::move(vertices), propNames, ifNotExists, ignoreExistedIndex);
+    return client_.addVertices(param, std::move(vertices), propNames,
+                              ifNotExists, ignoreExistedIndex);
   }
 
   auto deleteVertices(const CommonRequestParam& param, std::vector<Value> ids) {
@@ -71,7 +72,8 @@ class StorageClientWrapper {
                 std::vector<std::string> propNames,
                 bool ifNotExists,
                 bool ignoreExistedIndex) {
-    return client_.addEdges(param, std::move(edges), std::move(propNames), ifNotExists, ignoreExistedIndex);
+    return client_.addEdges(param, std::move(edges), std::move(propNames),
+                           ifNotExists, ignoreExistedIndex);
   }
 
   auto deleteEdges(const CommonRequestParam& param, std::vector<cpp2::EdgeKey> edges) {

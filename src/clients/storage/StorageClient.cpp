@@ -185,8 +185,9 @@ StorageRpcRespFuture<cpp2::ExecResponse> OrigStorageClient::addVertices(
                          });
 }
 
-StorageRpcRespFuture<cpp2::ExecResponse> OrigStorageClient::addEdges(const CommonRequestParam& param,
-                                                                 std::vector<cpp2::NewEdge> edges,
+StorageRpcRespFuture<cpp2::ExecResponse> OrigStorageClient::addEdges(
+    const CommonRequestParam& param,
+    std::vector<cpp2::NewEdge> edges,
                                                                  std::vector<std::string> propNames,
                                                                  bool ifNotExists,
                                                                  bool ignoreExistedIndex) {
@@ -771,7 +772,8 @@ StatusOr<std::function<const VertexID&(const Row&)>> OrigStorageClient::getIdFro
   return cb;
 }
 
-StatusOr<std::function<const VertexID&(const cpp2::NewVertex&)>> OrigStorageClient::getIdFromNewVertex(
+StatusOr<std::function<const VertexID&(const cpp2::NewVertex&)>>
+    OrigStorageClient::getIdFromNewVertex(
     GraphSpaceID space) const {
   auto vidTypeStatus = metaClient_->getSpaceVidType(space);
   if (!vidTypeStatus) {
