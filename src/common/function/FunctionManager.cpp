@@ -3122,7 +3122,7 @@ Status FunctionManager::find(const std::string &func, const size_t arity) {
 /*static*/ StatusOr<bool> FunctionManager::getIsPure(const std::string &func, size_t arity) {
   auto result = instance().getInternal(func, arity);
   NG_RETURN_IF_ERROR(result);
-  auto attr = std::move(result.value());
+  auto attr = result.value();
 
   if (attr.isAlwaysPure_) {
     return true;

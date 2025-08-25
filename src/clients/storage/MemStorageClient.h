@@ -141,6 +141,16 @@ class MemStorageClient {
       int64_t limit,
       const Expression* filter);
 
+  // Index operations
+  MemStorageRpcRespFuture<cpp2::LookupIndexResp> lookupIndex(
+      const CommonRequestParam& param,
+      const std::vector<storage::cpp2::IndexQueryContext>& indexQueryContext,
+      bool isEdge,
+      int32_t schemaId,
+      const std::vector<std::string>& returnColumns,
+      const std::vector<storage::cpp2::OrderBy>& orderBy,
+      int64_t limit);
+
   // KV operations
   folly::SemiFuture<StorageRpcResponse<cpp2::KVGetResponse>> get(
       GraphSpaceID space,

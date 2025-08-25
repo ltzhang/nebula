@@ -16,10 +16,9 @@ namespace storage {
 
 cpp2::RequestCommon MemStorageClient::CommonRequestParam::toReqCommon() const {
   cpp2::RequestCommon req;
-  req.set_space_id(space);
-  req.set_session_id(session);
-  req.set_plan_id(plan);
-  req.set_profile(profile);
+  req.session_id_ref() = session;
+  req.plan_id_ref() = plan;
+  req.profile_detail_ref() = profile;
   return req;
 }
 
@@ -36,7 +35,6 @@ template<typename T>
 MemStorageRpcRespFuture<T> MemStorageClient::makeSuccessResponse(T response) {
   StorageRpcResponse<T> rpcResp(1);
   rpcResp.addResponse(std::move(response));
-  rpcResp.markSinglePartSuccess();
   return folly::makeFuture<StorageRpcResponse<T>>(std::move(rpcResp));
 }
 
@@ -52,8 +50,8 @@ MemStorageRpcRespFuture<cpp2::ExecResponse> MemStorageClient::addVertices(
     const CommonRequestParam& param,
     std::vector<cpp2::NewVertex> vertices,
     std::unordered_map<TagID, std::vector<std::string>> propNames,
-    bool ifNotExists,
-    bool ignoreExistedIndex) {
+    bool /* ifNotExists */,
+    bool /* ignoreExistedIndex */) {
 
   LOG(INFO) << "MemStorageClient::addVertices - Adding " << vertices.size() << " vertices";
 
@@ -85,8 +83,8 @@ MemStorageRpcRespFuture<cpp2::ExecResponse> MemStorageClient::addVertices(
   }
 
   cpp2::ResponseCommon respCommon;
-  respCommon.set_latency_in_us(0);  // For simplicity
-  response.set_result(respCommon);
+  respCommon.latency_in_us_ref() = 0;  // For simplicity
+  response.result_ref() = respCommon;
 
   return makeSuccessResponse(std::move(response));
 }
@@ -95,8 +93,8 @@ MemStorageRpcRespFuture<cpp2::ExecResponse> MemStorageClient::addEdges(
     const CommonRequestParam& param,
     std::vector<cpp2::NewEdge> edges,
     std::vector<std::string> propNames,
-    bool ifNotExists,
-    bool ignoreExistedIndex) {
+    bool /* ifNotExists */,
+    bool /* ignoreExistedIndex */) {
 
   LOG(INFO) << "MemStorageClient::addEdges - Adding " << edges.size() << " edges";
 
@@ -125,8 +123,8 @@ MemStorageRpcRespFuture<cpp2::ExecResponse> MemStorageClient::addEdges(
   }
 
   cpp2::ResponseCommon respCommon;
-  respCommon.set_latency_in_us(0);
-  response.set_result(respCommon);
+  respCommon.latency_in_us_ref() = 0;
+  response.result_ref() = respCommon;
 
   return makeSuccessResponse(std::move(response));
 }
@@ -136,11 +134,11 @@ MemStorageRpcRespFuture<cpp2::GetPropResponse> MemStorageClient::getProps(
     const DataSet& input,
     const std::vector<cpp2::VertexProp>* vertexProps,
     const std::vector<cpp2::EdgeProp>* edgeProps,
-    const std::vector<cpp2::Expr>* expressions,
-    bool dedup,
-    const std::vector<cpp2::OrderBy>& orderBy,
-    int64_t limit,
-    const Expression* filter) {
+    const std::vector<cpp2::Expr>* /* expressions */,
+    bool /* dedup */,
+    const std::vector<cpp2::OrderBy>& /* orderBy */,
+    int64_t /* limit */,
+    const Expression* /* filter */) {
 
   LOG(INFO) << "MemStorageClient::getProps - Getting properties for "
             << input.rows.size() << " items";
@@ -183,34 +181,33 @@ MemStorageRpcRespFuture<cpp2::GetPropResponse> MemStorageClient::getProps(
     }
   }
 
-  response.set_props(std::move(resultDataSet));
+  response.props_ref() = std::move(resultDataSet);
 
   cpp2::ResponseCommon respCommon;
-  respCommon.set_latency_in_us(0);
-  response.set_result(respCommon);
+  respCommon.latency_in_us_ref() = 0;
+  response.result_ref() = respCommon;
 
   return makeSuccessResponse(std::move(response));
 }
 
 MemStorageRpcRespFuture<cpp2::GetNeighborsResponse> MemStorageClient::getNeighbors(
     const CommonRequestParam& param,
-    std::vector<std::string> colNames,
-    const std::vector<Value>& vids,
-    const std::vector<EdgeType>& edgeTypes,
-    cpp2::EdgeDirection edgeDirection,
-    const std::vector<cpp2::StatProp>* statProps,
-    const std::vector<cpp2::VertexProp>* vertexProps,
-    const std::vector<cpp2::EdgeProp>* edgeProps,
-    const std::vector<cpp2::Expr>* expressions,
-    bool dedup,
-    bool random,
-    const std::vector<cpp2::OrderBy>& orderBy,
+    std::vector<std::string> /* colNames */,
+    const std::vector<Value>& /* vids */,
+    const std::vector<EdgeType>& /* edgeTypes */,
+    cpp2::EdgeDirection /* edgeDirection */,
+    const std::vector<cpp2::StatProp>* /* statProps */,
+    const std::vector<cpp2::VertexProp>* /* vertexProps */,
+    const std::vector<cpp2::EdgeProp>* /* edgeProps */,
+    const std::vector<cpp2::Expr>* /* expressions */,
+    bool /* dedup */,
+    bool /* random */,
+    const std::vector<cpp2::OrderBy>& /* orderBy */,
     int64_t limit,
-    const Expression* filter,
-    const Expression* tagFilter) {
+    const Expression* /* filter */,
+    const Expression* /* tagFilter */) {
 
-  LOG(INFO) << "MemStorageClient::getNeighbors - Getting neighbors for "
-            << vids.size() << " vertices";
+  LOG(INFO) << "MemStorageClient::getNeighbors - Getting neighbors";
 
   cpp2::GetNeighborsResponse response;
   DataSet resultDataSet;
@@ -240,26 +237,26 @@ MemStorageRpcRespFuture<cpp2::GetNeighborsResponse> MemStorageClient::getNeighbo
     }
   }
 
-  response.set_vertices(std::move(resultDataSet));
+  response.vertices_ref() = std::move(resultDataSet);
 
   cpp2::ResponseCommon respCommon;
-  respCommon.set_latency_in_us(0);
-  response.set_result(respCommon);
+  respCommon.latency_in_us_ref() = 0;
+  response.result_ref() = respCommon;
 
   return makeSuccessResponse(std::move(response));
 }
 
 // Implement other methods with similar patterns...
 MemStorageRpcRespFuture<cpp2::ExecResponse> MemStorageClient::deleteVertices(
-    const CommonRequestParam& param,
+    const CommonRequestParam& /* param */,
     std::vector<Value> ids) {
   LOG(INFO) << "MemStorageClient::deleteVertices - Deleting " << ids.size() << " vertices";
 
   // Simplified - would need to find all vertex keys for each VID
   cpp2::ExecResponse response;
   cpp2::ResponseCommon respCommon;
-  respCommon.set_latency_in_us(0);
-  response.set_result(respCommon);
+  respCommon.latency_in_us_ref() = 0;
+  response.result_ref() = respCommon;
 
   return makeSuccessResponse(std::move(response));
 }
@@ -280,40 +277,40 @@ MemStorageRpcRespFuture<cpp2::ExecResponse> MemStorageClient::deleteEdges(
 
   cpp2::ExecResponse response;
   cpp2::ResponseCommon respCommon;
-  respCommon.set_latency_in_us(0);
-  response.set_result(respCommon);
+  respCommon.latency_in_us_ref() = 0;
+  response.result_ref() = respCommon;
 
   return makeSuccessResponse(std::move(response));
 }
 
 // KV operations
 folly::SemiFuture<StorageRpcResponse<cpp2::KVGetResponse>> MemStorageClient::get(
-    GraphSpaceID space,
+    GraphSpaceID /* space */,
     std::vector<std::string>&& keys,
-    bool returnPartly,
-    folly::EventBase* evb) {
+    bool /* returnPartly */,
+    folly::EventBase* /* evb */) {
 
   cpp2::KVGetResponse response;
-  std::vector<std::string> values;
+  std::unordered_map<std::string, std::string> keyValues;
 
   for (const auto& key : keys) {
     auto result = memStore_->get(key);
     if (result.ok()) {
-      values.push_back(result.value());
+      keyValues[key] = result.value();
     } else {
-      values.push_back("");  // Empty value for not found
+      keyValues[key] = "";  // Empty value for not found
     }
   }
 
-  response.set_key_values(std::move(values));
+  response.key_values_ref() = std::move(keyValues);
 
   return makeSuccessResponse(std::move(response));
 }
 
 folly::SemiFuture<StorageRpcResponse<cpp2::ExecResponse>> MemStorageClient::put(
-    GraphSpaceID space,
+    GraphSpaceID /* space */,
     std::vector<KeyValue> kvs,
-    folly::EventBase* evb) {
+    folly::EventBase* /* evb */) {
 
   std::vector<std::pair<std::string, std::string>> memKvs;
   for (const auto& kv : kvs) {
@@ -324,83 +321,104 @@ folly::SemiFuture<StorageRpcResponse<cpp2::ExecResponse>> MemStorageClient::put(
 
   cpp2::ExecResponse response;
   cpp2::ResponseCommon respCommon;
-  respCommon.set_latency_in_us(0);
-  response.set_result(respCommon);
+  respCommon.latency_in_us_ref() = 0;
+  response.result_ref() = respCommon;
 
   return makeSuccessResponse(std::move(response));
 }
 
 folly::SemiFuture<StorageRpcResponse<cpp2::ExecResponse>> MemStorageClient::remove(
-    GraphSpaceID space,
+    GraphSpaceID /* space */,
     std::vector<std::string> keys,
-    folly::EventBase* evb) {
+    folly::EventBase* /* evb */) {
 
   auto status = memStore_->batchRemove(keys);
 
   cpp2::ExecResponse response;
   cpp2::ResponseCommon respCommon;
-  respCommon.set_latency_in_us(0);
-  response.set_result(respCommon);
+  respCommon.latency_in_us_ref() = 0;
+  response.result_ref() = respCommon;
 
   return makeSuccessResponse(std::move(response));
 }
 
 // Stub implementations for remaining methods
 MemStorageRpcRespFuture<cpp2::ExecResponse> MemStorageClient::deleteTags(
-    const CommonRequestParam& param,
-    std::vector<cpp2::DelTags> delTags) {
+    const CommonRequestParam& /* param */,
+    std::vector<cpp2::DelTags> /* delTags */) {
   cpp2::ExecResponse response;
   cpp2::ResponseCommon respCommon;
-  response.set_result(respCommon);
+  response.result_ref() = respCommon;
   return makeSuccessResponse(std::move(response));
 }
 
 folly::Future<StatusOr<storage::cpp2::UpdateResponse>> MemStorageClient::updateVertex(
-    const CommonRequestParam& param,
-    Value vertexId,
-    TagID tagId,
-    std::vector<cpp2::UpdatedProp> updatedProps,
-    bool insertable,
-    std::vector<std::string> returnProps,
-    std::string condition) {
+    const CommonRequestParam& /* param */,
+    Value /* vertexId */,
+    TagID /* tagId */,
+    std::vector<cpp2::UpdatedProp> /* updatedProps */,
+    bool /* insertable */,
+    std::vector<std::string> /* returnProps */,
+    std::string /* condition */) {
   storage::cpp2::UpdateResponse response;
   return folly::makeFuture<StatusOr<storage::cpp2::UpdateResponse>>(std::move(response));
 }
 
 folly::Future<StatusOr<storage::cpp2::UpdateResponse>> MemStorageClient::updateEdge(
-    const CommonRequestParam& param,
-    storage::cpp2::EdgeKey edgeKey,
-    std::vector<cpp2::UpdatedProp> updatedProps,
-    bool insertable,
-    std::vector<std::string> returnProps,
-    std::string condition) {
+    const CommonRequestParam& /* param */,
+    storage::cpp2::EdgeKey /* edgeKey */,
+    std::vector<cpp2::UpdatedProp> /* updatedProps */,
+    bool /* insertable */,
+    std::vector<std::string> /* returnProps */,
+    std::string /* condition */) {
   storage::cpp2::UpdateResponse response;
   return folly::makeFuture<StatusOr<storage::cpp2::UpdateResponse>>(std::move(response));
 }
 
 MemStorageRpcRespFuture<cpp2::GetDstBySrcResponse> MemStorageClient::getDstBySrc(
-    const CommonRequestParam& param,
-    const std::vector<Value>& vertices,
-    const std::vector<EdgeType>& edgeTypes) {
+    const CommonRequestParam& /* param */,
+    const std::vector<Value>& /* vertices */,
+    const std::vector<EdgeType>& /* edgeTypes */) {
   cpp2::GetDstBySrcResponse response;
   return makeSuccessResponse(std::move(response));
 }
 
 MemStorageRpcRespFuture<cpp2::ScanResponse> MemStorageClient::scanVertex(
-    const CommonRequestParam& param,
-    const std::vector<cpp2::VertexProp>& vertexProp,
-    int64_t limit,
-    const Expression* filter) {
+    const CommonRequestParam& /* param */,
+    const std::vector<cpp2::VertexProp>& /* vertexProp */,
+    int64_t /* limit */,
+    const Expression* /* filter */) {
   cpp2::ScanResponse response;
   return makeSuccessResponse(std::move(response));
 }
 
 MemStorageRpcRespFuture<cpp2::ScanResponse> MemStorageClient::scanEdge(
-    const CommonRequestParam& param,
-    const std::vector<cpp2::EdgeProp>& edgeProp,
-    int64_t limit,
-    const Expression* filter) {
+    const CommonRequestParam& /* param */,
+    const std::vector<cpp2::EdgeProp>& /* edgeProp */,
+    int64_t /* limit */,
+    const Expression* /* filter */) {
   cpp2::ScanResponse response;
+  return makeSuccessResponse(std::move(response));
+}
+
+MemStorageRpcRespFuture<cpp2::LookupIndexResp> MemStorageClient::lookupIndex(
+    const CommonRequestParam& /* param */,
+    const std::vector<storage::cpp2::IndexQueryContext>& /* indexQueryContext */,
+    bool /* isEdge */,
+    int32_t /* schemaId */,
+    const std::vector<std::string>& /* returnColumns */,
+    const std::vector<storage::cpp2::OrderBy>& /* orderBy */,
+    int64_t /* limit */) {
+  cpp2::LookupIndexResp response;
+  cpp2::ResponseCommon respCommon;
+  respCommon.latency_in_us_ref() = 0;
+  response.result_ref() = respCommon;
+  
+  // For now, return empty data
+  DataSet emptyDataSet;
+  response.data_ref() = emptyDataSet;
+  response.stat_data_ref() = emptyDataSet;
+  
   return makeSuccessResponse(std::move(response));
 }
 
