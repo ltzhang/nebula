@@ -1372,7 +1372,7 @@ bool RaftPart::handleElectionResponses(const ElectionResponses& resps,
                                        TermID proposedTerm,
                                        bool isPreVote) {
   // Process the responses
-  auto elected = processElectionResponses(resps, std::move(peers), proposedTerm, isPreVote);
+  auto elected = processElectionResponses(resps, peers, proposedTerm, isPreVote);
   if (!isPreVote && elected) {
     std::vector<std::shared_ptr<Host>> hosts;
     {

@@ -29,11 +29,11 @@ static std::string ReadableSize(double size) {
 }
 
 constexpr size_t
-#if defined(__cpp_lib_hardware_interference_size)
-    CACHE_LINE_SIZE = std::hardware_destructive_interference_size;
-#else
+//#if defined(__cpp_lib_hardware_interference_size)
+//    CACHE_LINE_SIZE = std::hardware_destructive_interference_size;
+//#else
     CACHE_LINE_SIZE = 64;
-#endif
+//#endif
 
 // Memory stats for each thread.
 struct ThreadMemoryStats {

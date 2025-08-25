@@ -16,12 +16,12 @@ using nebula::storage::cpp2::GetPropResponse;
 namespace nebula {
 namespace storage {
 
-StorageClient::CommonRequestParam::CommonRequestParam(GraphSpaceID space_,
-                                                      SessionID sess,
-                                                      ExecutionPlanID plan_,
-                                                      bool profile_,
-                                                      bool experimental,
-                                                      folly::EventBase* evb_)
+OrigStorageClient::CommonRequestParam::CommonRequestParam(GraphSpaceID space_,
+                                                           SessionID sess,
+                                                           ExecutionPlanID plan_,
+                                                           bool profile_,
+                                                           bool experimental,
+                                                           folly::EventBase* evb_)
     : space(space_),
       session(sess),
       plan(plan_),
@@ -29,7 +29,7 @@ StorageClient::CommonRequestParam::CommonRequestParam(GraphSpaceID space_,
       useExperimentalFeature(experimental),
       evb(evb_) {}
 
-cpp2::RequestCommon StorageClient::CommonRequestParam::toReqCommon() const {
+cpp2::RequestCommon OrigStorageClient::CommonRequestParam::toReqCommon() const {
   cpp2::RequestCommon common;
   common.session_id_ref() = session;
   common.plan_id_ref() = plan;
@@ -37,7 +37,7 @@ cpp2::RequestCommon StorageClient::CommonRequestParam::toReqCommon() const {
   return common;
 }
 
-StorageRpcRespFuture<cpp2::GetNeighborsResponse> StorageClient::getNeighbors(
+StorageRpcRespFuture<cpp2::GetNeighborsResponse> OrigStorageClient::getNeighbors(
     const CommonRequestParam& param,
     std::vector<std::string> colNames,
     const std::vector<Value>& vids,
@@ -111,7 +111,7 @@ StorageRpcRespFuture<cpp2::GetNeighborsResponse> StorageClient::getNeighbors(
                          });
 }
 
-StorageRpcRespFuture<cpp2::GetDstBySrcResponse> StorageClient::getDstBySrc(
+StorageRpcRespFuture<cpp2::GetDstBySrcResponse> OrigStorageClient::getDstBySrc(
     const CommonRequestParam& param,
     const std::vector<Value>& vertices,
     const std::vector<EdgeType>& edgeTypes) {
@@ -146,7 +146,7 @@ StorageRpcRespFuture<cpp2::GetDstBySrcResponse> StorageClient::getDstBySrc(
                          });
 }
 
-StorageRpcRespFuture<cpp2::ExecResponse> StorageClient::addVertices(
+StorageRpcRespFuture<cpp2::ExecResponse> OrigStorageClient::addVertices(
     const CommonRequestParam& param,
     std::vector<cpp2::NewVertex> vertices,
     std::unordered_map<TagID, std::vector<std::string>> propNames,
@@ -185,7 +185,7 @@ StorageRpcRespFuture<cpp2::ExecResponse> StorageClient::addVertices(
                          });
 }
 
-StorageRpcRespFuture<cpp2::ExecResponse> StorageClient::addEdges(const CommonRequestParam& param,
+StorageRpcRespFuture<cpp2::ExecResponse> OrigStorageClient::addEdges(const CommonRequestParam& param,
                                                                  std::vector<cpp2::NewEdge> edges,
                                                                  std::vector<std::string> propNames,
                                                                  bool ifNotExists,
@@ -224,7 +224,7 @@ StorageRpcRespFuture<cpp2::ExecResponse> StorageClient::addEdges(const CommonReq
                          });
 }
 
-StorageRpcRespFuture<cpp2::GetPropResponse> StorageClient::getProps(
+StorageRpcRespFuture<cpp2::GetPropResponse> OrigStorageClient::getProps(
     const CommonRequestParam& param,
     const DataSet& input,
     const std::vector<cpp2::VertexProp>* vertexProps,
@@ -280,7 +280,7 @@ StorageRpcRespFuture<cpp2::GetPropResponse> StorageClient::getProps(
       });
 }
 
-StorageRpcRespFuture<cpp2::ExecResponse> StorageClient::deleteEdges(
+StorageRpcRespFuture<cpp2::ExecResponse> OrigStorageClient::deleteEdges(
     const CommonRequestParam& param, std::vector<cpp2::EdgeKey> edges) {
   auto cbStatus = getIdFromEdgeKey(param.space);
   if (!cbStatus.ok()) {
@@ -314,7 +314,7 @@ StorageRpcRespFuture<cpp2::ExecResponse> StorageClient::deleteEdges(
                          });
 }
 
-StorageRpcRespFuture<cpp2::ExecResponse> StorageClient::deleteVertices(
+StorageRpcRespFuture<cpp2::ExecResponse> OrigStorageClient::deleteVertices(
     const CommonRequestParam& param, std::vector<Value> ids) {
   auto cbStatus = getIdFromValue(param.space);
   if (!cbStatus.ok()) {
@@ -346,7 +346,7 @@ StorageRpcRespFuture<cpp2::ExecResponse> StorageClient::deleteVertices(
                          });
 }
 
-StorageRpcRespFuture<cpp2::ExecResponse> StorageClient::deleteTags(
+StorageRpcRespFuture<cpp2::ExecResponse> OrigStorageClient::deleteTags(
     const CommonRequestParam& param, std::vector<cpp2::DelTags> delTags) {
   auto cbStatus = getIdFromDelTags(param.space);
   if (!cbStatus.ok()) {
@@ -378,7 +378,7 @@ StorageRpcRespFuture<cpp2::ExecResponse> StorageClient::deleteTags(
                          });
 }
 
-folly::Future<StatusOr<storage::cpp2::UpdateResponse>> StorageClient::updateVertex(
+folly::Future<StatusOr<storage::cpp2::UpdateResponse>> OrigStorageClient::updateVertex(
     const CommonRequestParam& param,
     Value vertexId,
     TagID tagId,
@@ -428,7 +428,7 @@ folly::Future<StatusOr<storage::cpp2::UpdateResponse>> StorageClient::updateVert
                      });
 }
 
-folly::Future<StatusOr<storage::cpp2::UpdateResponse>> StorageClient::updateEdge(
+folly::Future<StatusOr<storage::cpp2::UpdateResponse>> OrigStorageClient::updateEdge(
     const CommonRequestParam& param,
     storage::cpp2::EdgeKey edgeKey,
     std::vector<cpp2::UpdatedProp> updatedProps,
@@ -479,7 +479,7 @@ folly::Future<StatusOr<storage::cpp2::UpdateResponse>> StorageClient::updateEdge
                      });
 }
 
-folly::Future<StatusOr<cpp2::GetUUIDResp>> StorageClient::getUUID(GraphSpaceID space,
+folly::Future<StatusOr<cpp2::GetUUIDResp>> OrigStorageClient::getUUID(GraphSpaceID space,
                                                                   const std::string& name,
                                                                   folly::EventBase* evb) {
   DCHECK(!!metaClient_);
@@ -509,7 +509,7 @@ folly::Future<StatusOr<cpp2::GetUUIDResp>> StorageClient::getUUID(GraphSpaceID s
       });
 }
 
-StorageRpcRespFuture<cpp2::LookupIndexResp> StorageClient::lookupIndex(
+StorageRpcRespFuture<cpp2::LookupIndexResp> OrigStorageClient::lookupIndex(
     const CommonRequestParam& param,
     const std::vector<storage::cpp2::IndexQueryContext>& contexts,
     bool isEdge,
@@ -557,7 +557,7 @@ StorageRpcRespFuture<cpp2::LookupIndexResp> StorageClient::lookupIndex(
                          });
 }
 
-StorageRpcRespFuture<cpp2::GetNeighborsResponse> StorageClient::lookupAndTraverse(
+StorageRpcRespFuture<cpp2::GetNeighborsResponse> OrigStorageClient::lookupAndTraverse(
     const CommonRequestParam& param, cpp2::IndexSpec indexSpec, cpp2::TraverseSpec traverseSpec) {
   auto space = param.space;
   auto status = getHostParts(space);
@@ -586,7 +586,7 @@ StorageRpcRespFuture<cpp2::GetNeighborsResponse> StorageClient::lookupAndTravers
                          });
 }
 
-StorageRpcRespFuture<cpp2::ScanResponse> StorageClient::scanEdge(
+StorageRpcRespFuture<cpp2::ScanResponse> OrigStorageClient::scanEdge(
     const CommonRequestParam& param,
     const std::vector<cpp2::EdgeProp>& edgeProp,
     int64_t limit,
@@ -617,7 +617,7 @@ StorageRpcRespFuture<cpp2::ScanResponse> StorageClient::scanEdge(
       });
 }
 
-StorageRpcRespFuture<cpp2::ScanResponse> StorageClient::scanVertex(
+StorageRpcRespFuture<cpp2::ScanResponse> OrigStorageClient::scanVertex(
     const CommonRequestParam& param,
     const std::vector<cpp2::VertexProp>& vertexProp,
     int64_t limit,
@@ -649,7 +649,7 @@ StorageRpcRespFuture<cpp2::ScanResponse> StorageClient::scanVertex(
                          });
 }
 
-folly::SemiFuture<StorageRpcResponse<cpp2::KVGetResponse>> StorageClient::get(
+folly::SemiFuture<StorageRpcResponse<cpp2::KVGetResponse>> OrigStorageClient::get(
     GraphSpaceID space, std::vector<std::string>&& keys, bool returnPartly, folly::EventBase* evb) {
   auto status = clusterIdsToHosts(
       space, std::move(keys), [](const std::string& v) -> const std::string& { return v; });
@@ -675,7 +675,7 @@ folly::SemiFuture<StorageRpcResponse<cpp2::KVGetResponse>> StorageClient::get(
       });
 }
 
-folly::SemiFuture<StorageRpcResponse<cpp2::ExecResponse>> StorageClient::put(
+folly::SemiFuture<StorageRpcResponse<cpp2::ExecResponse>> OrigStorageClient::put(
     GraphSpaceID space, std::vector<KeyValue> kvs, folly::EventBase* evb) {
   auto status = clusterIdsToHosts(
       space, std::move(kvs), [](const KeyValue& v) -> const std::string& { return v.key; });
@@ -700,7 +700,7 @@ folly::SemiFuture<StorageRpcResponse<cpp2::ExecResponse>> StorageClient::put(
       });
 }
 
-folly::SemiFuture<StorageRpcResponse<cpp2::ExecResponse>> StorageClient::remove(
+folly::SemiFuture<StorageRpcResponse<cpp2::ExecResponse>> OrigStorageClient::remove(
     GraphSpaceID space, std::vector<std::string> keys, folly::EventBase* evb) {
   auto status = clusterIdsToHosts(
       space, std::move(keys), [](const std::string& v) -> const std::string& { return v; });
@@ -725,7 +725,7 @@ folly::SemiFuture<StorageRpcResponse<cpp2::ExecResponse>> StorageClient::remove(
       });
 }
 
-StatusOr<std::function<const VertexID&(const Row&)>> StorageClient::getIdFromRow(
+StatusOr<std::function<const VertexID&(const Row&)>> OrigStorageClient::getIdFromRow(
     GraphSpaceID space, bool isEdgeProps) const {
   auto vidTypeStatus = metaClient_->getSpaceVidType(space);
   if (!vidTypeStatus) {
@@ -771,7 +771,7 @@ StatusOr<std::function<const VertexID&(const Row&)>> StorageClient::getIdFromRow
   return cb;
 }
 
-StatusOr<std::function<const VertexID&(const cpp2::NewVertex&)>> StorageClient::getIdFromNewVertex(
+StatusOr<std::function<const VertexID&(const cpp2::NewVertex&)>> OrigStorageClient::getIdFromNewVertex(
     GraphSpaceID space) const {
   auto vidTypeStatus = metaClient_->getSpaceVidType(space);
   if (!vidTypeStatus) {
@@ -799,7 +799,7 @@ StatusOr<std::function<const VertexID&(const cpp2::NewVertex&)>> StorageClient::
   return cb;
 }
 
-StatusOr<std::function<const VertexID&(const cpp2::NewEdge&)>> StorageClient::getIdFromNewEdge(
+StatusOr<std::function<const VertexID&(const cpp2::NewEdge&)>> OrigStorageClient::getIdFromNewEdge(
     GraphSpaceID space) const {
   auto vidTypeStatus = metaClient_->getSpaceVidType(space);
   if (!vidTypeStatus) {
@@ -835,7 +835,7 @@ StatusOr<std::function<const VertexID&(const cpp2::NewEdge&)>> StorageClient::ge
   return cb;
 }
 
-StatusOr<std::function<const VertexID&(const cpp2::EdgeKey&)>> StorageClient::getIdFromEdgeKey(
+StatusOr<std::function<const VertexID&(const cpp2::EdgeKey&)>> OrigStorageClient::getIdFromEdgeKey(
     GraphSpaceID space) const {
   auto vidTypeStatus = metaClient_->getSpaceVidType(space);
   if (!vidTypeStatus) {
@@ -867,7 +867,7 @@ StatusOr<std::function<const VertexID&(const cpp2::EdgeKey&)>> StorageClient::ge
   return cb;
 }
 
-StatusOr<std::function<const VertexID&(const Value&)>> StorageClient::getIdFromValue(
+StatusOr<std::function<const VertexID&(const Value&)>> OrigStorageClient::getIdFromValue(
     GraphSpaceID space) const {
   auto vidTypeStatus = metaClient_->getSpaceVidType(space);
   if (!vidTypeStatus) {
@@ -894,7 +894,7 @@ StatusOr<std::function<const VertexID&(const Value&)>> StorageClient::getIdFromV
   return cb;
 }
 
-StatusOr<std::function<const VertexID&(const cpp2::DelTags&)>> StorageClient::getIdFromDelTags(
+StatusOr<std::function<const VertexID&(const cpp2::DelTags&)>> OrigStorageClient::getIdFromDelTags(
     GraphSpaceID space) const {
   auto vidTypeStatus = metaClient_->getSpaceVidType(space);
   if (!vidTypeStatus) {

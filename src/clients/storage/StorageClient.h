@@ -13,6 +13,10 @@
 #include "interface/gen-cpp2/GraphStorageServiceAsyncClient.h"
 #include "storage/GraphStorageLocalServer.h"
 
+#ifdef USE_MEMSTORE
+#include "clients/storage/MemStorageClient.h"
+#endif
+
 namespace nebula {
 namespace storage {
 
@@ -34,7 +38,8 @@ template <typename T>
 using ThriftClientManType = thrift::LocalClientManager<T>;
 
 #endif
-class StorageClient
+
+class OrigStorageClient
     : public StorageClientBase<ThriftClientType, ThriftClientManType<ThriftClientType>> {
   FRIEND_TEST(StorageClientTest, LeaderChangeTest);
 
@@ -57,11 +62,11 @@ class StorageClient
     cpp2::RequestCommon toReqCommon() const;
   };
 
-  StorageClient(std::shared_ptr<folly::IOThreadPoolExecutor> ioThreadPool,
-                meta::MetaClient* metaClient)
+  OrigStorageClient(std::shared_ptr<folly::IOThreadPoolExecutor> ioThreadPool,
+                    meta::MetaClient* metaClient)
       : StorageClientBase<ThriftClientType, ThriftClientManType<ThriftClientType>>(ioThreadPool,
                                                                                    metaClient) {}
-  virtual ~StorageClient() {}
+  virtual ~OrigStorageClient() {}
 
   StorageRpcRespFuture<cpp2::GetNeighborsResponse> getNeighbors(
       const CommonRequestParam& param,
@@ -194,6 +199,13 @@ class StorageClient
   StatusOr<std::function<const VertexID&(const cpp2::DelTags&)>> getIdFromDelTags(
       GraphSpaceID space) const;
 };
+
+// Conditional typedef to switch between original and memory storage
+#ifdef USE_MEMSTORE
+using StorageClient = MemStorageClient;
+#else
+using StorageClient = OrigStorageClient;
+#endif
 
 }  // namespace storage
 }  // namespace nebula

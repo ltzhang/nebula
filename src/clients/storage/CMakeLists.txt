@@ -19,5 +19,40 @@ nebula_add_library(
     InternalStorageClient.cpp
 )
 
+
+nebula_add_library(
+    mem_store_obj OBJECT
+    MemStore.cpp
+)
+
+
+nebula_add_library(
+    mem_storage_client_obj OBJECT
+    MemStorageClient.cpp
+)
+
+
+# Optional test executable for verifying the storage client switch
+if(ENABLE_TESTING)
+    nebula_add_executable(
+        NAME
+            storage_client_switch_test
+        SOURCES
+            StorageClientSwitchTest.cpp
+        OBJECTS
+            $<TARGET_OBJECTS:mem_store_obj>
+            $<TARGET_OBJECTS:mem_storage_client_obj>
+            $<TARGET_OBJECTS:storage_client_obj>
+            $<TARGET_OBJECTS:storage_client_base_obj>
+        LIBRARIES
+            ${THRIFT_LIBRARIES}
+            ${PROXYGEN_LIBRARIES}
+            wangle
+            glog
+            gflags
+            folly
+    )
+endif()
+
 nebula_add_subdirectory(stats)
 
