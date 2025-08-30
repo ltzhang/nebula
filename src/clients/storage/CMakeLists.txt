@@ -32,6 +32,24 @@ nebula_add_library(
 )
 
 
+nebula_add_library(
+    kvt_impl_obj OBJECT
+    kvt/kvt_impl.cpp
+    kvt/kvt_mem.cpp
+)
+
+nebula_add_library(
+    kvt_store_obj OBJECT
+    KvtStore.cpp
+)
+
+
+nebula_add_library(
+    kvt_storage_client_obj OBJECT
+    KvtStorageClient.cpp
+)
+
+
 # Optional test executable for verifying the storage client switch
 if(ENABLE_TESTING)
     nebula_add_executable(

@@ -5,6 +5,7 @@
 # build
 pkg-build
 build
+build_kvt_test/
 build_memstore
 build_orig
 _build

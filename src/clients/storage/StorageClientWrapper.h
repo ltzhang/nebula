@@ -8,7 +8,9 @@
 
 #include "common/base/Base.h"
 
-#ifdef USE_MEMSTORE
+#ifdef USE_KVT
+#include "clients/storage/KvtStorageClient.h"
+#elif defined(USE_MEMSTORE)
 #include "clients/storage/MemStorageClient.h"
 #else
 #include "clients/storage/StorageClient.h"
@@ -18,12 +20,15 @@ namespace nebula {
 namespace storage {
 
 /**
- * A wrapper that provides a unified interface for both StorageClient and MemStorageClient
- * The actual implementation is chosen at compile time based on USE_MEMSTORE flag
+ * A wrapper that provides a unified interface for StorageClient, MemStorageClient, and KvtStorageClient
+ * The actual implementation is chosen at compile time based on USE_KVT or USE_MEMSTORE flags
  */
 class StorageClientWrapper {
  public:
-#ifdef USE_MEMSTORE
+#ifdef USE_KVT
+  using ClientType = KvtStorageClient;
+  using CommonRequestParam = KvtStorageClient::CommonRequestParam;
+#elif defined(USE_MEMSTORE)
   using ClientType = MemStorageClient;
   using CommonRequestParam = MemStorageClient::CommonRequestParam;
 #else
@@ -165,7 +170,10 @@ class StorageClientWrapper {
     return client_.remove(space, std::move(keys), evb);
   }
 
-#ifdef USE_MEMSTORE
+#ifdef USE_KVT
+  // Additional methods only available in KVT mode
+  // KVT-specific methods can be added here if needed
+#elif defined(USE_MEMSTORE)
   // Additional methods only available in MemStore mode
   auto getMemStore() { return static_cast<MemStorageClient&>(client_).memStore_; }
 #endif
