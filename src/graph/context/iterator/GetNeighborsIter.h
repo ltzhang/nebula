@@ -102,7 +102,8 @@ class GetNeighborsIter final : public Iterator {
   }
 
   Row moveRow() override {
-    return std::move(*currentEdge_);
+    //return std::move(*currentEdge_);
+    return *currentEdge_;
   }
 
  private:

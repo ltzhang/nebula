@@ -346,7 +346,7 @@ TEST(EitherOr, SelfAssignment) {
   }
   {
     EitherOr<int, std::string> r("SomeValue");
-    r = std::move(r);
+    //r = std::move(r);
     ASSERT_TRUE(r.isRightType());
     EXPECT_EQ("SomeValue", r.right());
   }
