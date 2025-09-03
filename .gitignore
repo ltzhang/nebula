@@ -69,3 +69,4 @@ venv/
 #ctags
 .tags
 /.vs
+work_dir/*

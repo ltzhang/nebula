@@ -22,7 +22,7 @@ nebula_add_library(
 nebula_add_subdirectory(stats)
 
 # KVT Storage Client support
-option(ENABLE_KVT "Enable KVT storage backend" OFF)
+option(ENABLE_KVT "Enable KVT storage backend" ON)
 
 if(ENABLE_KVT)
   # Compile kvt_mem.cpp to object file

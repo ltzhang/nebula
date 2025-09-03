@@ -113,6 +113,15 @@ nebula_add_executable(
         curl
 )
 
+# Prepare KVT objects if enabled
+set(kvt_objects "")
+if(ENABLE_KVT)
+    set(kvt_objects
+        $<TARGET_OBJECTS:kvt_storage_client_obj>
+        $<TARGET_OBJECTS:kvt_mem_obj>
+    )
+endif()
+
 nebula_add_executable(
     NAME
         nebula-graphd
@@ -150,6 +159,7 @@ nebula_add_executable(
         $<TARGET_OBJECTS:es_adapter_obj>
         $<TARGET_OBJECTS:storage_thrift_obj>
         $<TARGET_OBJECTS:gc_obj>
+        ${kvt_objects}
         ${common_deps}
     LIBRARIES
         ${PROXYGEN_LIBRARIES}
@@ -251,6 +261,7 @@ nebula_add_executable(
         $<TARGET_OBJECTS:meta_data_upgrade_obj>
         $<TARGET_OBJECTS:meta_v2_thrift_obj>
         $<TARGET_OBJECTS:gc_obj>
+        ${kvt_objects}
         ${storage_meta_deps}
         ${common_deps}
     LIBRARIES
