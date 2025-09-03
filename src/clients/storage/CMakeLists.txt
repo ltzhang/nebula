@@ -59,3 +59,6 @@ if(ENABLE_KVT)
   message(STATUS "KVT storage backend enabled")
 endif()
 
+# Add KVT tests subdirectory (will be built when KVT is enabled and testing is on)
+nebula_add_subdirectory(kvt/test)
+

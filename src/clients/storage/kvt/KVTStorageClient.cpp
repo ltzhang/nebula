@@ -256,9 +256,39 @@ StorageRpcRespFuture<cpp2::GetNeighborsResponse> KVTStorageClient::getNeighbors(
     
     if (edgeDirection == cpp2::EdgeDirection::IN_EDGE || 
         edgeDirection == cpp2::EdgeDirection::BOTH) {
-      // For incoming edges, we would need a reverse index
-      // TODO: Implement reverse edge index
-      LOG(WARNING) << "IN_EDGE direction not fully supported without index";
+      // Use reverse edge index to find incoming edges
+      for (EdgeType edgeType : edgeTypes) {
+        std::string reversePrefix = KVTKeyEncoder::reverseEdgePrefix(
+            param.space, partId, &vid, edgeType);
+        std::string scanStart = reversePrefix;
+        std::string scanEnd = reversePrefix;
+        scanEnd.push_back(0xFF);
+        
+        std::vector<std::pair<std::string, std::string>> inEdges;
+        std::string error;
+        KVTError err = kvt_scan(txId, edgeTableId, scanStart, scanEnd,
+                                limit > 0 ? limit : 10000, inEdges, error);
+        
+        if (err == KVTError::SUCCESS) {
+          // For IN_EDGE, we need to transform the reverse edge back
+          for (const auto& [reverseKey, value] : inEdges) {
+            // Decode reverse edge to get the actual edge info
+            GraphSpaceID spaceId;
+            PartitionID partId;
+            Value dstId, srcId;
+            EdgeType edgeType;
+            EdgeRanking ranking;
+            
+            if (KVTKeyEncoder::decodeReverseEdgeKey(reverseKey, spaceId, partId,
+                                                    dstId, edgeType, ranking, srcId)) {
+              // Reconstruct the forward edge key for consistency
+              std::string forwardKey = KVTKeyEncoder::encodeEdgeKey(
+                  spaceId, partId, srcId, edgeType, ranking, dstId);
+              edgeResults.push_back({forwardKey, value});
+            }
+          }
+        }
+      }
     }
     
     // Process edge results
@@ -760,13 +790,24 @@ StorageRpcRespFuture<cpp2::ExecResponse> KVTStorageClient::addEdges(
     // Encode the value with properties
     std::string value = KVTValueEncoder::encodeNewEdge(edge, propNames);
     
-    // Add SET operation
+    // Add SET operation for the forward edge
     KVTOp setOp;
     setOp.op = OP_SET;
     setOp.table_id = edgeTableId;
     setOp.key = key;
     setOp.value = value;
     batchOps.push_back(setOp);
+    
+    // Also add reverse edge index for efficient IN_EDGE queries
+    std::string reverseKey = KVTKeyEncoder::encodeReverseEdgeKey(
+        param.space, partId, dstId, edgeType, ranking, srcId);
+    
+    KVTOp reverseOp;
+    reverseOp.op = OP_SET;
+    reverseOp.table_id = edgeTableId;
+    reverseOp.key = reverseKey;
+    reverseOp.value = value;  // Store same edge data
+    batchOps.push_back(reverseOp);
   }
   
   // Execute batch operations
@@ -873,16 +914,26 @@ StorageRpcRespFuture<cpp2::ExecResponse> KVTStorageClient::deleteEdges(
     EdgeRanking ranking = edgeKey.get_ranking();
     PartitionID partId = 0;  // TODO: Calculate proper partition
     
-    // Encode the key
+    // Encode the forward edge key
     std::string key = KVTKeyEncoder::encodeEdgeKey(
         param.space, partId, srcId, edgeType, ranking, dstId);
     
-    // Add DELETE operation
+    // Add DELETE operation for forward edge
     KVTOp delOp;
     delOp.op = OP_DEL;
     delOp.table_id = edgeTableId;
     delOp.key = key;
     batchOps.push_back(delOp);
+    
+    // Also delete the reverse edge index
+    std::string reverseKey = KVTKeyEncoder::encodeReverseEdgeKey(
+        param.space, partId, dstId, edgeType, ranking, srcId);
+    
+    KVTOp delReverseOp;
+    delReverseOp.op = OP_DEL;
+    delReverseOp.table_id = edgeTableId;
+    delReverseOp.key = reverseKey;
+    batchOps.push_back(delReverseOp);
   }
   
   // Execute batch operations
@@ -1027,9 +1078,47 @@ StorageRpcRespFuture<cpp2::ExecResponse> KVTStorageClient::deleteVertices(
       }
     }
     
-    // TODO: Also need to delete edges where this vertex is the destination
-    // This would require a secondary index or full scan, which is expensive
-    // For now, we'll skip this as it requires index support
+    // Delete incoming edges (where this vertex is the destination)
+    // Use reverse edge index to efficiently find incoming edges
+    std::string reversePrefix = KVTKeyEncoder::reverseEdgePrefix(
+        spaceId, 0, &vid);  // partId = 0, will scan all edge types
+    std::string scanEnd = reversePrefix;
+    scanEnd.push_back(0xFF);
+    
+    std::vector<std::pair<std::string, std::string>> incomingEdges;
+    std::string scanError;
+    KVTError scanErr = kvt_scan(txId, edgeTableId, reversePrefix, scanEnd,
+                                10000, incomingEdges, scanError);
+    
+    if (scanErr == KVTError::SUCCESS) {
+      for (const auto& [reverseKey, value] : incomingEdges) {
+        // Delete the reverse edge index entry
+        KVTOp delReverseOp;
+        delReverseOp.op = OP_DEL;
+        delReverseOp.table_id = edgeTableId;
+        delReverseOp.key = reverseKey;
+        batchOps.push_back(delReverseOp);
+        
+        // Also delete the corresponding forward edge
+        GraphSpaceID spaceId;
+        PartitionID partId;
+        Value dstId, srcId;
+        EdgeType edgeType;
+        EdgeRanking ranking;
+        
+        if (KVTKeyEncoder::decodeReverseEdgeKey(reverseKey, spaceId, partId,
+                                                dstId, edgeType, ranking, srcId)) {
+          std::string forwardKey = KVTKeyEncoder::encodeEdgeKey(
+              spaceId, partId, srcId, edgeType, ranking, dstId);
+          
+          KVTOp delForwardOp;
+          delForwardOp.op = OP_DEL;
+          delForwardOp.table_id = edgeTableId;
+          delForwardOp.key = forwardKey;
+          batchOps.push_back(delForwardOp);
+        }
+      }
+    }
   }
   
   // Execute batch operations

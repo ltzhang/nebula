@@ -4,7 +4,7 @@
 
 KVT (Key-Value Transactional store) is a transactional storage interface being integrated into NebulaGraph to replace the traditional distributed storage layer. Instead of the Graph Service making remote RPC calls to Storage Service nodes, KVT is embedded directly into the storage client, allowing the Graph Service to interact with a local transactional key-value store.
 
-This integration provides ACID transactional capabilities, improved performance by eliminating network overhead, and a cleaner abstraction for storage operations.
+**Current Status**: Early development phase (~35% complete). Core functionality working with memory implementation.
 
 ## Architecture Changes
 
@@ -119,60 +119,62 @@ The build system will automatically link `kvt_mem.o` when KVT is enabled. To use
 
 ## Testing
 
-### Unit Tests
+### Available Tests
+
+#### Unit Tests
+Located in `src/clients/storage/kvt/test/`:
+- `kvt_validation_test.cpp` - Core KVT API validation
+- `kvt_nebula_integration_test.cpp` - NebulaGraph integration tests  
+- `KVTKeyEncoderTest.cpp` - Key encoding tests
+- `KVTTransactionManagerTest.cpp` - Transaction manager tests
+- `KVTStorageClientTest.cpp` - Storage client tests
+
+#### Quick Validation
 ```bash
-# Run KVT-specific tests
+# Quick test without full build
+cd src/clients/storage/kvt
+./quick_test.sh
+
+# Validation script
+./validate_kvt.sh
+```
+
+#### Building and Running Tests
+```bash
+# Build with testing enabled (KVT tests are built automatically)
 cd build
-./bin/kvt_test
+cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_TESTING=ON ..
+make -j$(nproc)
 
-# Run integration tests
-./bin/storage_client_kvt_test
+# After build, test binaries are available in bin/test/
+ls bin/test/kvt_*
+
+# Run all KVT tests
+../src/clients/storage/kvt/test/run_validation_tests.sh
+
+# Run individual tests
+./bin/test/kvt_validation_test
+./bin/test/kvt_key_encoder_test
+./bin/test/kvt_transaction_manager_test
+./bin/test/kvt_reverse_edge_test
+./bin/test/kvt_comprehensive_test
+./bin/test/kvt_nebula_integration_test
 ```
 
-### Functional Tests
-```bash
-# Start test environment with KVT
-cd tests
-make kvt-up
-
-# Run KVT integration tests
-python3 -m pytest tests/kvt/
-
-# Run standard tests with KVT backend
-make test-with-kvt
-```
-
-### Performance Tests
-```bash
-# Benchmark KVT operations
-./bin/kvt_benchmark --operations=1000000
-
-# Compare with traditional storage
-./scripts/compare_storage_perf.sh
-```
+**Note**: Performance benchmarks and distributed tests are not yet implemented.
 
 ## Configuration
 
 ### Enable KVT in Graph Service
+KVT is enabled by default when building with CMake. To use KVT at runtime:
+
 ```yaml
 # conf/nebula-graphd.conf
 --enable_kvt=true
---kvt_impl_path=/path/to/kvt_impl.so  # Optional: custom implementation
---kvt_memory_limit=8GB
---kvt_transaction_timeout=5000ms
+--kvt_memory_limit=4GB  # For memory implementation
 ```
 
-### KVT-Specific Settings
-```yaml
-# Transaction settings
---kvt_isolation_level=SNAPSHOT  # SNAPSHOT, SERIALIZABLE
---kvt_max_concurrent_txn=1000
---kvt_conflict_retry_count=3
-
-# Memory settings (for kvt_mem)
---kvt_mem_table_size=1GB
---kvt_mem_cache_size=256MB
-```
+**Note**: Most KVT-specific configuration options are planned but not yet implemented. Currently, KVT uses default settings with the memory implementation.
 
 ## Design Decisions
 
@@ -211,70 +213,47 @@ Indexes:   {IndexID}:{IndexValue} → {VID/EdgeKey}
 - High concurrency for read-heavy workloads
 - Predictable performance
 
-## Optimization Opportunities
+## Future Optimization Opportunities
 
-### 1. Batch Processing
-- **Current**: Individual KVT operations per graph element
-- **Optimization**: Batch multiple operations into single KVT calls
-- **Expected Gain**: 30-50% reduction in overhead for bulk operations
+These optimizations are planned for future development:
 
-### 2. Caching Layer
-- **Current**: Direct KVT access for all reads
-- **Optimization**: Add LRU cache for hot vertices/edges
-- **Expected Gain**: 2-3x improvement for repeated queries
+1. **Batch Processing** - Group multiple operations into single KVT transactions
+2. **Caching Layer** - Add LRU cache for frequently accessed data
+3. **Parallel Execution** - Enable concurrent transaction processing
+4. **Index Optimization** - Implement efficient secondary indexes
+5. **Memory Layout** - Optimize data structures for graph workloads
+6. **Compression** - Add value compression for large properties
 
-### 3. Parallel Execution
-- **Current**: Sequential transaction execution
-- **Optimization**: Parallel execution with conflict resolution
-- **Expected Gain**: Near-linear scaling for non-conflicting workloads
+## Current Implementation Status
 
-### 4. Index Optimization
-- **Current**: Secondary indexes as separate KVT entries
-- **Optimization**: Composite keys for covering indexes
-- **Expected Gain**: 50% reduction in index lookup latency
+### Completed Features
+- ✅ Core KVT interface (`kvt_inc.h`)
+- ✅ Memory implementation with MVCC (`kvt_mem.cpp`)
+- ✅ Basic CRUD operations for vertices and edges
+- ✅ Transaction support with isolation
+- ✅ Key/Value encoders for NebulaGraph data model
+- ✅ CMake integration (enabled by default)
 
-### 5. Memory Layout
-- **Current**: Generic key-value storage
-- **Optimization**: Graph-aware memory layout with locality optimization
-- **Expected Gain**: Better cache utilization, 20-30% performance improvement
+### In Progress (with TODOs)
+- ⚠️ Partition calculation (currently hardcoded to partition 0)
+- ⚠️ Complete delete operations (missing reverse edge cleanup)
+- ⚠️ Index operations (27 TODOs remaining)
 
-### 6. Compression
-- **Current**: No compression
-- **Optimization**: Selective compression for large property values
-- **Expected Gain**: 40-60% memory reduction for property-heavy graphs
-
-## Migration Guide
-
-### Phase 1: Development Testing
-1. Build with KVT enabled
-2. Run existing tests with KVT backend
-3. Verify correctness and performance
-
-### Phase 2: Performance Validation
-1. Load production-like datasets
-2. Run benchmark queries
-3. Compare metrics with traditional storage
-
-### Phase 3: Production Rollout
-1. Deploy in read-only replica first
-2. Enable for specific query patterns
-3. Gradual rollout with monitoring
-
-## Limitations and Future Work
+## Limitations
 
 ### Current Limitations
-- Memory-based reference implementation (kvt_mem) not suitable for production
-- No distributed transaction support across partitions
-- Limited to single-node deployments
+- Memory-only implementation (no persistence)
+- No distributed transaction support
+- Partition calculation not implemented
+- Missing scan operations (scanVertex, scanEdge)
+- No index support (lookupIndex operations)
+- Admin operations not implemented
 
-### Future Enhancements
-1. **Production KVT Implementation**: Integration with RocksDB or other persistent stores
-2. **Distributed Transactions**: Cross-partition transaction support
-3. **Advanced Features**:
-   - Time-travel queries
-   - Multi-version schema evolution
-   - Incremental backups
-4. **Query Optimization**: KVT-aware query planning and execution
+### Not Yet Implemented
+- Production storage backend (RocksDB integration)
+- Performance benchmarking tools
+- Distributed deployment support
+- Recovery and backup mechanisms
 
 ## Troubleshooting
 
@@ -294,76 +273,80 @@ Indexes:   {IndexID}:{IndexValue} → {VID/EdgeKey}
 
 ### Debug Options
 ```bash
-# Enable KVT debug logging
-export KVT_LOG_LEVEL=DEBUG
+# Check if KVT is working
+cd src/clients/storage/kvt
+./quick_test.sh
 
-# Trace transaction flow
-export KVT_TRACE_TXN=1
-
-# Monitor KVT metrics
-./bin/kvt_monitor --port=9999
+# Validate implementation
+./validate_kvt.sh
 ```
+
+**Note**: Advanced debug logging and monitoring tools are not yet implemented.
 
 ## API Examples
 
-### Basic Usage
+### Basic Usage (Current API)
 ```cpp
 // Initialize KVT
-kvt_init();
+KVTError result = kvt_initialize();
 
-// Simple transaction
-kvt_txn_t* txn = kvt_begin();
-kvt_put(txn, "key1", "value1");
-kvt_put(txn, "key2", "value2");
-kvt_commit(txn);
+// Create a table
+std::string error;
+uint64_t table_id;
+result = kvt_create_table("my_table", "hash", table_id, error);
+
+// Start transaction
+uint64_t txn_id;
+result = kvt_start_transaction(txn_id, error);
+
+// Write operation
+result = kvt_set(txn_id, table_id, "key1", "value1", error);
 
 // Read operation
-txn = kvt_begin();
-char* value = kvt_get(txn, "key1");
-kvt_commit(txn);
+std::string value;
+result = kvt_get(txn_id, table_id, "key1", value, error);
 
-// Range scan
-txn = kvt_begin();
-kvt_iterator_t* iter = kvt_scan(txn, "key1", "key9");
-while (kvt_iter_valid(iter)) {
-    // Process key-value pair
-    kvt_iter_next(iter);
-}
-kvt_commit(txn);
+// Commit transaction
+result = kvt_commit_transaction(txn_id, error);
+
+// Cleanup
+kvt_shutdown();
 ```
 
-### Graph Operations
+### Graph Operations (Through KVTStorageClient)
 ```cpp
-// Insert vertex
-kvt_txn_t* txn = kvt_begin();
-string vertex_key = format_vertex_key(partition_id, vertex_id, tag_id);
-kvt_put(txn, vertex_key, serialize_properties(properties));
-kvt_commit(txn);
+// Using KVTStorageClient for NebulaGraph operations
+KVTStorageClient client(nullptr, nullptr);
 
-// Traverse edges
-txn = kvt_begin();
-string edge_prefix = format_edge_prefix(partition_id, src_vertex_id);
-kvt_iterator_t* iter = kvt_scan_prefix(txn, edge_prefix);
-while (kvt_iter_valid(iter)) {
-    // Process outgoing edges
-    kvt_iter_next(iter);
-}
-kvt_commit(txn);
+// Add vertices
+std::vector<cpp2::NewVertex> vertices;
+cpp2::NewVertex vertex;
+vertex.id_ref() = "vertex_001";
+// ... set tags and properties
+vertices.push_back(vertex);
+
+auto future = client.addVertices(spaceId, vertices, {}, true, requestParams);
+auto result = std::move(future).get();
+
+// Add edges
+std::vector<cpp2::NewEdge> edges;
+// ... configure edges
+auto edgeFuture = client.addEdges(spaceId, edges, {}, true, requestParams);
 ```
 
-## Contributing
+**Note**: Direct KVT scan operations are not yet implemented. Use KVTStorageClient for graph operations.
 
-When contributing to KVT integration:
+## Development Status
 
-1. Follow NebulaGraph coding standards
-2. Add tests for new functionality
-3. Update this documentation for API changes
-4. Run performance benchmarks for optimization PRs
-5. Ensure backward compatibility
+This is an active development project. Key files:
+- Interface: `kvt/kvt_inc.h`
+- Memory Implementation: `kvt/kvt_mem.cpp`
+- Storage Client: `kvt/KVTStorageClient.cpp`
+- Tests: `kvt/test/*.cpp`
+- Quick Test: `kvt/quick_test.sh`
 
-## References
-
-- [NebulaGraph Documentation](https://docs.nebula-graph.io/)
-- [KVT Interface Specification](kvt/kvt_inc.h)
-- [Storage Client Architecture](../README.md)
-- [Transaction Design Document](docs/kvt_transactions.md)
+For the latest status, run:
+```bash
+cd src/clients/storage/kvt
+./validate_kvt.sh
+```

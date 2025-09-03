@@ -52,6 +52,23 @@ std::string KVTKeyEncoder::encodeEdgeKey(GraphSpaceID spaceId,
                       edgeKey.get_dst());
 }
 
+std::string KVTKeyEncoder::encodeReverseEdgeKey(GraphSpaceID spaceId,
+                                                PartitionID partId,
+                                                const Value& dstId,
+                                                EdgeType edgeType,
+                                                EdgeRanking ranking,
+                                                const Value& srcId) {
+  std::stringstream ss;
+  ss << REVERSE_EDGE_PREFIX << SEPARATOR
+     << spaceId << SEPARATOR
+     << partId << SEPARATOR
+     << escapeValue(valueToKeyString(dstId)) << SEPARATOR
+     << edgeType << SEPARATOR
+     << ranking << SEPARATOR
+     << escapeValue(valueToKeyString(srcId));
+  return ss.str();
+}
+
 std::string KVTKeyEncoder::encodeIndexKey(GraphSpaceID spaceId,
                                           IndexID indexId,
                                           const std::string& indexValue) {
@@ -89,6 +106,25 @@ std::string KVTKeyEncoder::edgePrefix(GraphSpaceID spaceId,
   
   if (srcId != nullptr) {
     ss << escapeValue(valueToKeyString(*srcId)) << SEPARATOR;
+    if (edgeType != 0) {
+      ss << edgeType << SEPARATOR;
+    }
+  }
+  
+  return ss.str();
+}
+
+std::string KVTKeyEncoder::reverseEdgePrefix(GraphSpaceID spaceId,
+                                             PartitionID partId,
+                                             const Value* dstId,
+                                             EdgeType edgeType) {
+  std::stringstream ss;
+  ss << REVERSE_EDGE_PREFIX << SEPARATOR
+     << spaceId << SEPARATOR
+     << partId << SEPARATOR;
+  
+  if (dstId != nullptr) {
+    ss << escapeValue(valueToKeyString(*dstId)) << SEPARATOR;
     if (edgeType != 0) {
       ss << edgeType << SEPARATOR;
     }
@@ -165,6 +201,44 @@ bool KVTKeyEncoder::decodeEdgeKey(const std::string& key,
     return true;
   } catch (const std::exception& e) {
     LOG(ERROR) << "Failed to decode edge key: " << e.what();
+    return false;
+  }
+}
+
+bool KVTKeyEncoder::decodeReverseEdgeKey(const std::string& key,
+                                         GraphSpaceID& spaceId,
+                                         PartitionID& partId,
+                                         Value& dstId,
+                                         EdgeType& edgeType,
+                                         EdgeRanking& ranking,
+                                         Value& srcId) {
+  if (key.empty() || key[0] != REVERSE_EDGE_PREFIX) {
+    return false;
+  }
+  
+  std::stringstream ss(key);
+  std::string token;
+  std::vector<std::string> tokens;
+  
+  while (std::getline(ss, token, SEPARATOR)) {
+    tokens.push_back(token);
+  }
+  
+  if (tokens.size() != 7) {
+    return false;
+  }
+  
+  try {
+    // tokens[0] is the prefix 'r'
+    spaceId = std::stoi(tokens[1]);
+    partId = std::stoi(tokens[2]);
+    dstId = keyStringToValue(unescapeValue(tokens[3]));
+    edgeType = std::stoi(tokens[4]);
+    ranking = std::stoll(tokens[5]);
+    srcId = keyStringToValue(unescapeValue(tokens[6]));
+    return true;
+  } catch (const std::exception& e) {
+    LOG(ERROR) << "Failed to decode reverse edge key: " << e.what();
     return false;
   }
 }

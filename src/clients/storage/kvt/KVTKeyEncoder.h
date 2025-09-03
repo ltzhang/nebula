@@ -28,6 +28,7 @@ class KVTKeyEncoder {
   static constexpr char VERTEX_PREFIX = 'v';
   static constexpr char EDGE_PREFIX = 'e';
   static constexpr char INDEX_PREFIX = 'i';
+  static constexpr char REVERSE_EDGE_PREFIX = 'r';  // For reverse edge index
   static constexpr char SEPARATOR = ':';
 
   /**
@@ -68,6 +69,24 @@ class KVTKeyEncoder {
                                    const cpp2::EdgeKey& edgeKey);
 
   /**
+   * Encode a reverse edge index key
+   * This allows efficient lookup of incoming edges to a destination vertex
+   * @param spaceId Graph space ID
+   * @param partId Partition ID
+   * @param dstId Destination vertex ID
+   * @param edgeType Edge type
+   * @param ranking Edge ranking
+   * @param srcId Source vertex ID
+   * @return Encoded reverse edge index key
+   */
+  static std::string encodeReverseEdgeKey(GraphSpaceID spaceId,
+                                          PartitionID partId,
+                                          const Value& dstId,
+                                          EdgeType edgeType,
+                                          EdgeRanking ranking,
+                                          const Value& srcId);
+
+  /**
    * Encode an index key
    * @param spaceId Graph space ID
    * @param indexId Index ID
@@ -103,6 +122,19 @@ class KVTKeyEncoder {
                                 EdgeType edgeType = 0);
 
   /**
+   * Create a prefix for scanning reverse edges (incoming edges to a vertex)
+   * @param spaceId Graph space ID
+   * @param partId Partition ID
+   * @param dstId Destination vertex ID (optional)
+   * @param edgeType Edge type (optional, 0 means all types)
+   * @return Key prefix for scanning reverse edges
+   */
+  static std::string reverseEdgePrefix(GraphSpaceID spaceId,
+                                       PartitionID partId,
+                                       const Value* dstId = nullptr,
+                                       EdgeType edgeType = 0);
+
+  /**
    * Decode a vertex key
    * @param key Encoded key
    * @param spaceId Output space ID
@@ -135,6 +167,25 @@ class KVTKeyEncoder {
                             EdgeType& edgeType,
                             EdgeRanking& ranking,
                             Value& dstId);
+
+  /**
+   * Decode a reverse edge key
+   * @param key Encoded reverse edge key
+   * @param spaceId Output space ID
+   * @param partId Output partition ID
+   * @param dstId Output destination vertex ID
+   * @param edgeType Output edge type
+   * @param ranking Output edge ranking
+   * @param srcId Output source vertex ID
+   * @return true if decode successful
+   */
+  static bool decodeReverseEdgeKey(const std::string& key,
+                                   GraphSpaceID& spaceId,
+                                   PartitionID& partId,
+                                   Value& dstId,
+                                   EdgeType& edgeType,
+                                   EdgeRanking& ranking,
+                                   Value& srcId);
 
   /**
    * Helper to convert Value to string for key encoding
