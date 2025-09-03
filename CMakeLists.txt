@@ -29,11 +29,17 @@ option(ENABLE_CONSOLE_COMPILATION "Enable nebula-console compilation" OFF)
 option(ENABLE_PACKAGE_TAR "Enable package artifacts to tar." OFF)
 option(ENABLE_CREATE_GIT_HOOKS "Enable create git hooks." OFF)
 option(ENABLE_INCLUDE_WHAT_YOU_USE "Enable include-what-you-use find  nouse include files" OFF)
+option(ENABLE_KVT "Enable KVT storage backend" ON)
 
 add_definitions(-DNEBULA_HOME=${CMAKE_SOURCE_DIR})
 
 if(ENABLE_STANDALONE_VERSION)
     add_definitions(-DBUILD_STANDALONE)
+endif()
+
+if(ENABLE_KVT)
+    add_definitions(-DENABLE_KVT)
+    message(STATUS "KVT storage backend is ENABLED")
 endif()
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)

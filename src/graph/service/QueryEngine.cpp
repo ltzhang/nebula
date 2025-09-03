@@ -16,9 +16,15 @@
 #include "graph/service/QueryInstance.h"
 #include "version/Version.h"
 
+// Include KVT storage client if enabled
+#ifdef ENABLE_KVT
+#include "clients/storage/kvt/KVTStorageClient.h"
+#endif
+
 DECLARE_bool(local_config);
 DECLARE_bool(enable_optimizer);
 DECLARE_string(meta_server_addrs);
+DECLARE_bool(enable_kvt_storage);
 DEFINE_int32(check_memory_interval_in_secs, 1, "Memory check interval in seconds");
 
 namespace nebula {
@@ -29,7 +35,27 @@ Status QueryEngine::init(std::shared_ptr<folly::IOThreadPoolExecutor> ioExecutor
   metaClient_ = metaClient;
   schemaManager_ = meta::ServerBasedSchemaManager::create(metaClient_);
   indexManager_ = meta::ServerBasedIndexManager::create(metaClient_);
-  storage_ = std::make_unique<storage::StorageClient>(ioExecutor, metaClient_);
+  
+  // Choose storage backend based on configuration (default: KVT)
+  if (FLAGS_enable_kvt_storage) {
+#ifdef ENABLE_KVT
+    LOG(INFO) << "Using KVT storage backend (default)";
+    auto kvtStorage = std::make_unique<storage::KVTStorageClient>(ioExecutor, metaClient_);
+    auto status = kvtStorage->init();
+    if (!status.ok()) {
+      LOG(ERROR) << "Failed to initialize KVT storage: " << status.toString();
+      return status;
+    }
+    storage_ = std::move(kvtStorage);
+#else
+    LOG(ERROR) << "KVT storage requested but not compiled in. Please compile with -DENABLE_KVT=ON";
+    return Status::Error("KVT storage not available");
+#endif
+  } else {
+    LOG(INFO) << "Using distributed storage backend (--enable_kvt_storage=false)";
+    storage_ = std::make_unique<storage::StorageClient>(ioExecutor, metaClient_);
+  }
+  
   charsetInfo_ = CharsetInfo::instance();
 
   PlannersRegister::registerPlanners();

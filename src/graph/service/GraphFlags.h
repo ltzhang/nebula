@@ -47,6 +47,11 @@ DECLARE_uint32(max_statements);
 // value of failed_login_attempts is in the range from 0 to 32767.
 // The deault value is 0. A value of 0 disables the option.
 DECLARE_uint32(failed_login_attempts);
+
+// KVT storage configuration
+DECLARE_bool(enable_kvt_storage);
+DECLARE_string(kvt_partition_method);
+DECLARE_int32(kvt_transaction_retry_times);
 // value of password_lock_time_in_secs is in the range from 0 to 32767[secs].
 // The deault value is 0. A value of 0 disables the option.
 DECLARE_uint32(password_lock_time_in_secs);

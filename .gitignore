@@ -70,3 +70,4 @@ venv/
 .tags
 /.vs
 work_dir/*
+src/clients/storage/kvt/*_test

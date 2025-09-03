@@ -26,9 +26,7 @@ cpp2::RequestCommon KVTStorageClient::CommonRequestParam::toReqCommon() const {
 KVTStorageClient::KVTStorageClient(
     std::shared_ptr<folly::IOThreadPoolExecutor> ioThreadPool,
     meta::MetaClient* metaClient)
-    : StorageClientBase<cpp2::GraphStorageServiceAsyncClient,
-                       thrift::ThriftClientManager<cpp2::GraphStorageServiceAsyncClient>>(
-          ioThreadPool, metaClient),
+    : StorageClient(ioThreadPool, metaClient),
       ioThreadPool_(ioThreadPool) {
   LOG(INFO) << "Creating KVTStorageClient";
 }
@@ -1081,13 +1079,13 @@ StorageRpcRespFuture<cpp2::ExecResponse> KVTStorageClient::deleteVertices(
     // Delete incoming edges (where this vertex is the destination)
     // Use reverse edge index to efficiently find incoming edges
     std::string reversePrefix = KVTKeyEncoder::reverseEdgePrefix(
-        spaceId, 0, &vid);  // partId = 0, will scan all edge types
-    std::string scanEnd = reversePrefix;
-    scanEnd.push_back(0xFF);
+        param.space, 0, &vertexId);  // partId = 0, will scan all edge types
+    std::string reverseScanEnd = reversePrefix;
+    reverseScanEnd.push_back(0xFF);
     
     std::vector<std::pair<std::string, std::string>> incomingEdges;
     std::string scanError;
-    KVTError scanErr = kvt_scan(txId, edgeTableId, reversePrefix, scanEnd,
+    KVTError scanErr = kvt_scan(txId, edgeTableId, reversePrefix, reverseScanEnd,
                                 10000, incomingEdges, scanError);
     
     if (scanErr == KVTError::SUCCESS) {

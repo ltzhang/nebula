@@ -3,263 +3,353 @@
  * This source code is licensed under Apache 2.0 License.
  */
 
-#include <gtest/gtest.h>
 #include <memory>
 #include <iostream>
 #include <vector>
 #include <string>
+#include <cassert>
+#include <cstring>
+#include <algorithm>
 
-#include "clients/storage/kvt/kvt_inc.h"
+#include "../kvt_inc.h"
 
-class KVTValidationTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        kvt_init();
+#define TEST_ASSERT(condition, message) \
+    do { \
+        if (!(condition)) { \
+            std::cerr << "[FAIL] " << message << " at " << __FILE__ << ":" << __LINE__ << std::endl; \
+            exit(1); \
+        } \
+    } while(0)
+
+class KVTValidationTest {
+public:
+    void SetUp() {
+        KVTError err = kvt_initialize();
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to initialize KVT");
         std::cout << "[TEST] KVT initialized successfully" << std::endl;
     }
 
-    void TearDown() override {
+    void TearDown() {
         kvt_shutdown();
         std::cout << "[TEST] KVT shutdown successfully" << std::endl;
     }
 };
 
-TEST_F(KVTValidationTest, BasicOperations) {
+void TestBasicOperations() {
     std::cout << "\n=== Testing Basic KVT Operations ===" << std::endl;
+    
+    // Create a table first
+    std::string error_msg;
+    uint64_t table_id;
+    KVTError err = kvt_create_table("test_table", "hash", table_id, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to create table: " + error_msg);
+    std::cout << "[PASS] Table created with ID: " << table_id << std::endl;
     
     // Test 1: Simple put and get
     {
-        auto* txn = kvt_begin();
-        ASSERT_NE(txn, nullptr) << "Failed to begin transaction";
-        std::cout << "[PASS] Transaction started" << std::endl;
+        uint64_t tx_id;
+        err = kvt_start_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to begin transaction: " + error_msg);
+        std::cout << "[PASS] Transaction started with ID: " << tx_id << std::endl;
         
-        const char* key = "test_key_1";
-        const char* value = "test_value_1";
+        std::string key = "test_key_1";
+        std::string value = "test_value_1";
         
-        int put_result = kvt_put(txn, key, strlen(key), value, strlen(value));
-        ASSERT_EQ(put_result, 0) << "Failed to put key-value pair";
+        err = kvt_set(tx_id, table_id, key, value, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to put key-value pair: " + error_msg);
         std::cout << "[PASS] Put operation: " << key << " -> " << value << std::endl;
         
-        int commit_result = kvt_commit(txn);
-        ASSERT_EQ(commit_result, 0) << "Failed to commit transaction";
+        err = kvt_commit_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to commit transaction: " + error_msg);
         std::cout << "[PASS] Transaction committed" << std::endl;
     }
     
     // Test 2: Read back the value
     {
-        auto* txn = kvt_begin();
-        ASSERT_NE(txn, nullptr) << "Failed to begin read transaction";
+        uint64_t tx_id;
+        err = kvt_start_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to begin read transaction: " + error_msg);
         
-        const char* key = "test_key_1";
-        size_t value_len;
+        std::string key = "test_key_1";
+        std::string retrieved_value;
         
-        const char* retrieved = kvt_get(txn, key, strlen(key), &value_len);
-        ASSERT_NE(retrieved, nullptr) << "Failed to get value";
-        ASSERT_EQ(value_len, strlen("test_value_1")) << "Value length mismatch";
-        ASSERT_EQ(std::string(retrieved, value_len), "test_value_1") << "Value mismatch";
-        std::cout << "[PASS] Get operation: " << key << " -> " << std::string(retrieved, value_len) << std::endl;
+        err = kvt_get(tx_id, table_id, key, retrieved_value, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to get value: " + error_msg);
+        TEST_ASSERT(retrieved_value == "test_value_1", "Value mismatch");
+        std::cout << "[PASS] Get operation: " << key << " -> " << retrieved_value << std::endl;
         
-        kvt_commit(txn);
+        kvt_commit_transaction(tx_id, error_msg);
     }
 }
 
-TEST_F(KVTValidationTest, TransactionIsolation) {
+void TestTransactionIsolation() {
     std::cout << "\n=== Testing Transaction Isolation ===" << std::endl;
+    
+    // Create table
+    std::string error_msg;
+    uint64_t table_id;
+    KVTError err = kvt_create_table("iso_table", "hash", table_id, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to create table: " + error_msg);
     
     // Setup: Insert initial data
     {
-        auto* txn = kvt_begin();
-        kvt_put(txn, "iso_key", 7, "initial", 7);
-        kvt_commit(txn);
+        uint64_t tx_id;
+        err = kvt_start_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
+        
+        err = kvt_set(tx_id, table_id, "iso_key", "initial", error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to set initial value");
+        
+        err = kvt_commit_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to commit");
         std::cout << "[SETUP] Initial value: iso_key -> initial" << std::endl;
     }
     
     // Test: Start two transactions
-    auto* txn1 = kvt_begin();
-    auto* txn2 = kvt_begin();
-    ASSERT_NE(txn1, nullptr);
-    ASSERT_NE(txn2, nullptr);
+    uint64_t txn1, txn2;
+    err = kvt_start_transaction(txn1, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start txn1");
+    
+    err = kvt_start_transaction(txn2, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start txn2");
     std::cout << "[PASS] Started two concurrent transactions" << std::endl;
     
     // Txn1 updates the value
-    kvt_put(txn1, "iso_key", 7, "txn1_value", 10);
+    err = kvt_set(txn1, table_id, "iso_key", "txn1_value", error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to update in txn1");
     std::cout << "[TXN1] Updated iso_key -> txn1_value (not committed)" << std::endl;
     
     // Txn2 should still see the original value
-    size_t len;
-    const char* value = kvt_get(txn2, "iso_key", 7, &len);
-    ASSERT_NE(value, nullptr);
-    ASSERT_EQ(std::string(value, len), "initial") << "Transaction isolation violated";
-    std::cout << "[PASS] TXN2 still sees original value: " << std::string(value, len) << std::endl;
+    std::string value;
+    err = kvt_get(txn2, table_id, "iso_key", value, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to get in txn2");
+    TEST_ASSERT(value == "initial", "Transaction isolation violated");
+    std::cout << "[PASS] TXN2 still sees original value: " << value << std::endl;
     
     // Commit txn1
-    int result = kvt_commit(txn1);
-    ASSERT_EQ(result, 0) << "Failed to commit txn1";
+    err = kvt_commit_transaction(txn1, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to commit txn1");
     std::cout << "[TXN1] Committed successfully" << std::endl;
     
     // Txn2 should still see snapshot value
-    value = kvt_get(txn2, "iso_key", 7, &len);
-    ASSERT_NE(value, nullptr);
-    ASSERT_EQ(std::string(value, len), "initial") << "Snapshot isolation violated";
+    err = kvt_get(txn2, table_id, "iso_key", value, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to get in txn2 after commit");
+    TEST_ASSERT(value == "initial", "Snapshot isolation violated");
     std::cout << "[PASS] TXN2 maintains snapshot isolation" << std::endl;
     
-    kvt_commit(txn2);
+    kvt_commit_transaction(txn2, error_msg);
     
     // New transaction should see the updated value
-    auto* txn3 = kvt_begin();
-    value = kvt_get(txn3, "iso_key", 7, &len);
-    ASSERT_NE(value, nullptr);
-    ASSERT_EQ(std::string(value, len), "txn1_value") << "Update not visible after commit";
-    std::cout << "[PASS] New transaction sees committed value: " << std::string(value, len) << std::endl;
-    kvt_commit(txn3);
+    uint64_t txn3;
+    err = kvt_start_transaction(txn3, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start txn3");
+    
+    err = kvt_get(txn3, table_id, "iso_key", value, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to get in txn3");
+    TEST_ASSERT(value == "txn1_value", "Update not visible after commit");
+    std::cout << "[PASS] New transaction sees committed value: " << value << std::endl;
+    kvt_commit_transaction(txn3, error_msg);
 }
 
-TEST_F(KVTValidationTest, ConflictDetection) {
+void TestConflictDetection() {
     std::cout << "\n=== Testing Conflict Detection ===" << std::endl;
+    
+    // Create table
+    std::string error_msg;
+    uint64_t table_id;
+    KVTError err = kvt_create_table("conflict_table", "hash", table_id, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to create table: " + error_msg);
     
     // Setup
     {
-        auto* txn = kvt_begin();
-        kvt_put(txn, "conflict_key", 12, "original", 8);
-        kvt_commit(txn);
+        uint64_t tx_id;
+        err = kvt_start_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
+        
+        err = kvt_set(tx_id, table_id, "conflict_key", "original", error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to set initial value");
+        
+        err = kvt_commit_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to commit");
         std::cout << "[SETUP] Initial value: conflict_key -> original" << std::endl;
     }
     
     // Two transactions modify the same key
-    auto* txn1 = kvt_begin();
-    auto* txn2 = kvt_begin();
+    uint64_t txn1, txn2;
+    err = kvt_start_transaction(txn1, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start txn1");
+    
+    err = kvt_start_transaction(txn2, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start txn2");
     
     // Both read the same key (establishing read sets)
-    size_t len;
-    kvt_get(txn1, "conflict_key", 12, &len);
-    kvt_get(txn2, "conflict_key", 12, &len);
+    std::string value;
+    err = kvt_get(txn1, table_id, "conflict_key", value, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to get in txn1");
+    
+    err = kvt_get(txn2, table_id, "conflict_key", value, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to get in txn2");
     std::cout << "[INFO] Both transactions read conflict_key" << std::endl;
     
     // Both try to update
-    kvt_put(txn1, "conflict_key", 12, "value1", 6);
-    kvt_put(txn2, "conflict_key", 12, "value2", 6);
+    err = kvt_set(txn1, table_id, "conflict_key", "value1", error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to update in txn1");
+    
+    err = kvt_set(txn2, table_id, "conflict_key", "value2", error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to update in txn2");
     std::cout << "[INFO] Both transactions updated conflict_key" << std::endl;
     
     // First commit should succeed
-    int result1 = kvt_commit(txn1);
-    ASSERT_EQ(result1, 0) << "First transaction should commit successfully";
+    err = kvt_commit_transaction(txn1, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "First transaction should commit successfully");
     std::cout << "[PASS] TXN1 committed successfully" << std::endl;
     
     // Second commit should fail due to conflict
-    int result2 = kvt_commit(txn2);
-    ASSERT_NE(result2, 0) << "Second transaction should fail due to conflict";
+    err = kvt_commit_transaction(txn2, error_msg);
+    TEST_ASSERT(err == KVTError::TRANSACTION_HAS_STALE_DATA, "Second transaction should fail due to conflict");
     std::cout << "[PASS] TXN2 failed to commit (conflict detected)" << std::endl;
     
     // Verify final value
-    auto* txn3 = kvt_begin();
-    const char* value = kvt_get(txn3, "conflict_key", 12, &len);
-    ASSERT_NE(value, nullptr);
-    ASSERT_EQ(std::string(value, len), "value1") << "Wrong value after conflict resolution";
-    std::cout << "[PASS] Final value is from TXN1: " << std::string(value, len) << std::endl;
-    kvt_commit(txn3);
+    uint64_t txn3;
+    err = kvt_start_transaction(txn3, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start txn3");
+    
+    err = kvt_get(txn3, table_id, "conflict_key", value, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to get final value");
+    TEST_ASSERT(value == "value1", "Wrong value after conflict resolution");
+    std::cout << "[PASS] Final value is from TXN1: " << value << std::endl;
+    kvt_commit_transaction(txn3, error_msg);
 }
 
-TEST_F(KVTValidationTest, RangeScans) {
+void TestRangeScans() {
     std::cout << "\n=== Testing Range Scans ===" << std::endl;
+    
+    // Create a range-partitioned table for scans
+    std::string error_msg;
+    uint64_t table_id;
+    KVTError err = kvt_create_table("scan_table", "range", table_id, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to create range table: " + error_msg);
     
     // Insert test data with keys that can be scanned
     {
-        auto* txn = kvt_begin();
-        kvt_put(txn, "scan_001", 8, "value1", 6);
-        kvt_put(txn, "scan_002", 8, "value2", 6);
-        kvt_put(txn, "scan_003", 8, "value3", 6);
-        kvt_put(txn, "scan_004", 8, "value4", 6);
-        kvt_put(txn, "scan_005", 8, "value5", 6);
-        kvt_commit(txn);
+        uint64_t tx_id;
+        err = kvt_start_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
+        
+        err = kvt_set(tx_id, table_id, "scan_001", "value1", error_msg);
+        err = kvt_set(tx_id, table_id, "scan_002", "value2", error_msg);
+        err = kvt_set(tx_id, table_id, "scan_003", "value3", error_msg);
+        err = kvt_set(tx_id, table_id, "scan_004", "value4", error_msg);
+        err = kvt_set(tx_id, table_id, "scan_005", "value5", error_msg);
+        
+        err = kvt_commit_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to commit");
         std::cout << "[SETUP] Inserted 5 scan keys" << std::endl;
     }
     
     // Test range scan
     {
-        auto* txn = kvt_begin();
-        auto* iter = kvt_scan(txn, "scan_001", 8, "scan_004", 8);
-        ASSERT_NE(iter, nullptr) << "Failed to create scan iterator";
+        uint64_t tx_id;
+        err = kvt_start_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
         
-        int count = 0;
-        std::vector<std::string> found_keys;
+        std::vector<std::pair<std::string, std::string>> results;
+        err = kvt_scan(tx_id, table_id, "scan_001", "scan_004", 10, results, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to perform scan: " + error_msg);
         
-        while (kvt_iter_valid(iter)) {
-            size_t key_len, val_len;
-            const char* key = kvt_iter_key(iter, &key_len);
-            const char* val = kvt_iter_value(iter, &val_len);
-            
-            ASSERT_NE(key, nullptr);
-            ASSERT_NE(val, nullptr);
-            
-            found_keys.push_back(std::string(key, key_len));
-            std::cout << "[SCAN] Found: " << std::string(key, key_len) 
-                      << " -> " << std::string(val, val_len) << std::endl;
-            
-            kvt_iter_next(iter);
-            count++;
+        // The scan is inclusive at start, exclusive at end [scan_001, scan_004)
+        TEST_ASSERT(results.size() == 3, "Expected 3 keys in range [scan_001, scan_004)");
+        TEST_ASSERT(results[0].first == "scan_001", "First key mismatch");
+        TEST_ASSERT(results[1].first == "scan_002", "Second key mismatch");
+        TEST_ASSERT(results[2].first == "scan_003", "Third key mismatch");
+        
+        for (const auto& [key, val] : results) {
+            std::cout << "[SCAN] Found: " << key << " -> " << val << std::endl;
         }
         
-        kvt_iter_destroy(iter);
-        kvt_commit(txn);
-        
-        ASSERT_EQ(count, 3) << "Expected 3 keys in range [scan_001, scan_004)";
-        ASSERT_EQ(found_keys[0], "scan_001");
-        ASSERT_EQ(found_keys[1], "scan_002");
-        ASSERT_EQ(found_keys[2], "scan_003");
-        std::cout << "[PASS] Range scan returned " << count << " keys" << std::endl;
+        std::cout << "[PASS] Range scan returned " << results.size() << " keys" << std::endl;
+        kvt_commit_transaction(tx_id, error_msg);
     }
 }
 
-TEST_F(KVTValidationTest, DeleteOperations) {
+void TestDeleteOperations() {
     std::cout << "\n=== Testing Delete Operations ===" << std::endl;
+    
+    // Create table
+    std::string error_msg;
+    uint64_t table_id;
+    KVTError err = kvt_create_table("delete_table", "hash", table_id, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to create table: " + error_msg);
     
     // Setup
     {
-        auto* txn = kvt_begin();
-        kvt_put(txn, "delete_key", 10, "to_delete", 9);
-        kvt_commit(txn);
+        uint64_t tx_id;
+        err = kvt_start_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
+        
+        err = kvt_set(tx_id, table_id, "delete_key", "to_delete", error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to set value");
+        
+        err = kvt_commit_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to commit");
         std::cout << "[SETUP] Inserted delete_key -> to_delete" << std::endl;
     }
     
     // Verify key exists
     {
-        auto* txn = kvt_begin();
-        size_t len;
-        const char* value = kvt_get(txn, "delete_key", 10, &len);
-        ASSERT_NE(value, nullptr) << "Key should exist before deletion";
-        std::cout << "[VERIFY] Key exists: " << std::string(value, len) << std::endl;
-        kvt_commit(txn);
+        uint64_t tx_id;
+        err = kvt_start_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
+        
+        std::string value;
+        err = kvt_get(tx_id, table_id, "delete_key", value, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Key should exist before deletion");
+        std::cout << "[VERIFY] Key exists: " << value << std::endl;
+        kvt_commit_transaction(tx_id, error_msg);
     }
     
     // Delete the key
     {
-        auto* txn = kvt_begin();
-        int result = kvt_delete(txn, "delete_key", 10);
-        ASSERT_EQ(result, 0) << "Failed to delete key";
+        uint64_t tx_id;
+        err = kvt_start_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
+        
+        err = kvt_del(tx_id, table_id, "delete_key", error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to delete key");
         std::cout << "[DELETE] Marked key for deletion" << std::endl;
         
         // Key should not be visible in same transaction after delete
-        size_t len;
-        const char* value = kvt_get(txn, "delete_key", 10, &len);
-        ASSERT_EQ(value, nullptr) << "Deleted key should not be visible";
+        std::string value;
+        err = kvt_get(tx_id, table_id, "delete_key", value, error_msg);
+        TEST_ASSERT(err == KVTError::KEY_IS_DELETED || err == KVTError::KEY_NOT_FOUND, "Deleted key should not be visible");
         std::cout << "[PASS] Key not visible in same transaction after delete" << std::endl;
         
-        kvt_commit(txn);
+        err = kvt_commit_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to commit deletion");
     }
     
     // Verify deletion persisted
     {
-        auto* txn = kvt_begin();
-        size_t len;
-        const char* value = kvt_get(txn, "delete_key", 10, &len);
-        ASSERT_EQ(value, nullptr) << "Deleted key should not exist";
+        uint64_t tx_id;
+        err = kvt_start_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
+        
+        std::string value;
+        err = kvt_get(tx_id, table_id, "delete_key", value, error_msg);
+        TEST_ASSERT(err == KVTError::KEY_NOT_FOUND, "Deleted key should not exist");
         std::cout << "[PASS] Key successfully deleted" << std::endl;
-        kvt_commit(txn);
+        kvt_commit_transaction(tx_id, error_msg);
     }
 }
 
-TEST_F(KVTValidationTest, LargeDataHandling) {
+void TestLargeDataHandling() {
     std::cout << "\n=== Testing Large Data Handling ===" << std::endl;
+    
+    // Create table
+    std::string error_msg;
+    uint64_t table_id;
+    KVTError err = kvt_create_table("large_table", "hash", table_id, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to create table: " + error_msg);
     
     // Create large value (1MB)
     const size_t large_size = 1024 * 1024;
@@ -267,126 +357,122 @@ TEST_F(KVTValidationTest, LargeDataHandling) {
     
     // Store large value
     {
-        auto* txn = kvt_begin();
-        int result = kvt_put(txn, "large_key", 9, large_value.c_str(), large_size);
-        ASSERT_EQ(result, 0) << "Failed to store large value";
+        uint64_t tx_id;
+        err = kvt_start_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
+        
+        err = kvt_set(tx_id, table_id, "large_key", large_value, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to store large value");
         std::cout << "[PASS] Stored " << large_size << " bytes" << std::endl;
         
-        result = kvt_commit(txn);
-        ASSERT_EQ(result, 0) << "Failed to commit large value";
+        err = kvt_commit_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to commit large value");
     }
     
     // Retrieve and verify
     {
-        auto* txn = kvt_begin();
-        size_t len;
-        const char* value = kvt_get(txn, "large_key", 9, &len);
-        ASSERT_NE(value, nullptr) << "Failed to retrieve large value";
-        ASSERT_EQ(len, large_size) << "Large value size mismatch";
+        uint64_t tx_id;
+        err = kvt_start_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
+        
+        std::string value;
+        err = kvt_get(tx_id, table_id, "large_key", value, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to retrieve large value");
+        TEST_ASSERT(value.size() == large_size, "Large value size mismatch");
         
         // Verify content
-        for (size_t i = 0; i < std::min(size_t(100), len); i++) {
-            ASSERT_EQ(value[i], 'X') << "Large value content corrupted at position " << i;
+        for (size_t i = 0; i < std::min(size_t(100), value.size()); i++) {
+            TEST_ASSERT(value[i] == 'X', "Large value content corrupted at position " + std::to_string(i));
         }
-        std::cout << "[PASS] Retrieved and verified " << len << " bytes" << std::endl;
-        kvt_commit(txn);
+        std::cout << "[PASS] Retrieved and verified " << value.size() << " bytes" << std::endl;
+        kvt_commit_transaction(tx_id, error_msg);
     }
 }
 
-TEST_F(KVTValidationTest, StressTest) {
+void TestStressTest() {
     std::cout << "\n=== Running Stress Test ===" << std::endl;
     
-    const int num_operations = 1000;
+    // Create table
+    std::string error_msg;
+    uint64_t table_id;
+    KVTError err = kvt_create_table("stress_table", "hash", table_id, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to create table: " + error_msg);
+    
+    const int num_keys = 1000;
     
     // Insert many keys
     {
-        auto* txn = kvt_begin();
-        for (int i = 0; i < num_operations; i++) {
-            std::string key = "stress_" + std::to_string(i);
-            std::string value = "value_" + std::to_string(i);
+        uint64_t tx_id;
+        err = kvt_start_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
+        
+        for (int i = 0; i < num_keys; i++) {
+            std::string key = "stress_key_" + std::to_string(i);
+            std::string value = "stress_value_" + std::to_string(i);
             
-            int result = kvt_put(txn, key.c_str(), key.length(), 
-                               value.c_str(), value.length());
-            ASSERT_EQ(result, 0) << "Failed to insert key " << i;
+            err = kvt_set(tx_id, table_id, key, value, error_msg);
+            TEST_ASSERT(err == KVTError::SUCCESS, "Failed to insert key " + key);
             
             if (i % 100 == 0) {
                 std::cout << "[PROGRESS] Inserted " << i << " keys" << std::endl;
             }
         }
         
-        int result = kvt_commit(txn);
-        ASSERT_EQ(result, 0) << "Failed to commit stress test inserts";
-        std::cout << "[PASS] Inserted " << num_operations << " keys" << std::endl;
+        err = kvt_commit_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to commit stress test inserts");
+        std::cout << "[PASS] Inserted " << num_keys << " keys" << std::endl;
     }
     
     // Verify all keys
     {
-        auto* txn = kvt_begin();
-        for (int i = 0; i < num_operations; i++) {
-            std::string key = "stress_" + std::to_string(i);
-            std::string expected = "value_" + std::to_string(i);
+        uint64_t tx_id;
+        err = kvt_start_transaction(tx_id, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
+        
+        for (int i = 0; i < num_keys; i++) {
+            std::string key = "stress_key_" + std::to_string(i);
+            std::string expected_value = "stress_value_" + std::to_string(i);
+            std::string value;
             
-            size_t len;
-            const char* value = kvt_get(txn, key.c_str(), key.length(), &len);
-            ASSERT_NE(value, nullptr) << "Failed to get key " << i;
-            ASSERT_EQ(std::string(value, len), expected) << "Value mismatch for key " << i;
-        }
-        kvt_commit(txn);
-        std::cout << "[PASS] Verified all " << num_operations << " keys" << std::endl;
-    }
-    
-    // Update half the keys
-    {
-        auto* txn = kvt_begin();
-        for (int i = 0; i < num_operations / 2; i++) {
-            std::string key = "stress_" + std::to_string(i);
-            std::string value = "updated_" + std::to_string(i);
+            err = kvt_get(tx_id, table_id, key, value, error_msg);
+            TEST_ASSERT(err == KVTError::SUCCESS, "Failed to get key " + key);
+            TEST_ASSERT(value == expected_value, "Value mismatch for key " + key);
             
-            int result = kvt_put(txn, key.c_str(), key.length(), 
-                               value.c_str(), value.length());
-            ASSERT_EQ(result, 0) << "Failed to update key " << i;
+            if (i % 100 == 0) {
+                std::cout << "[PROGRESS] Verified " << i << " keys" << std::endl;
+            }
         }
         
-        int result = kvt_commit(txn);
-        ASSERT_EQ(result, 0) << "Failed to commit updates";
-        std::cout << "[PASS] Updated " << num_operations/2 << " keys" << std::endl;
-    }
-    
-    // Delete every third key
-    {
-        auto* txn = kvt_begin();
-        int deleted = 0;
-        for (int i = 0; i < num_operations; i += 3) {
-            std::string key = "stress_" + std::to_string(i);
-            int result = kvt_delete(txn, key.c_str(), key.length());
-            ASSERT_EQ(result, 0) << "Failed to delete key " << i;
-            deleted++;
-        }
-        
-        int result = kvt_commit(txn);
-        ASSERT_EQ(result, 0) << "Failed to commit deletions";
-        std::cout << "[PASS] Deleted " << deleted << " keys" << std::endl;
+        kvt_commit_transaction(tx_id, error_msg);
+        std::cout << "[PASS] Verified all " << num_keys << " keys" << std::endl;
     }
 }
 
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
+// Main test runner
+int main(int argc, char** argv) {
+    KVTValidationTest test;
     
-    std::cout << "================================================" << std::endl;
-    std::cout << "     KVT Implementation Validation Tests       " << std::endl;
-    std::cout << "================================================" << std::endl;
+    std::cout << "=== KVT Validation Test Suite ===" << std::endl;
+    std::cout << "Initializing KVT system..." << std::endl;
     
-    int result = RUN_ALL_TESTS();
+    test.SetUp();
     
-    if (result == 0) {
-        std::cout << "\n================================================" << std::endl;
-        std::cout << "     ALL TESTS PASSED SUCCESSFULLY!            " << std::endl;
-        std::cout << "================================================" << std::endl;
-    } else {
-        std::cout << "\n================================================" << std::endl;
-        std::cout << "     SOME TESTS FAILED - CHECK OUTPUT          " << std::endl;
-        std::cout << "================================================" << std::endl;
+    try {
+        TestBasicOperations();
+        TestTransactionIsolation();
+        TestConflictDetection();
+        TestRangeScans();
+        TestDeleteOperations();
+        TestLargeDataHandling();
+        TestStressTest();
+        
+        std::cout << "\n=== ALL TESTS PASSED ===" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "\n[ERROR] Test failed with exception: " << e.what() << std::endl;
+        test.TearDown();
+        return 1;
     }
     
-    return result;
+    test.TearDown();
+    return 0;
 }

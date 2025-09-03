@@ -6,7 +6,7 @@
 #ifndef CLIENTS_STORAGE_KVT_KVTSTORAGECLIENT_H
 #define CLIENTS_STORAGE_KVT_KVTSTORAGECLIENT_H
 
-#include "clients/storage/StorageClientBase.h"
+#include "clients/storage/StorageClient.h"
 #include "clients/storage/kvt/kvt_inc.h"
 #include "common/base/Base.h"
 #include "common/thrift/ThriftClientManager.h"
@@ -24,8 +24,7 @@ using StorageRpcRespFuture = folly::SemiFuture<StorageRpcResponse<T>>;
  * This client implements the StorageClient interface but uses a local KVT store
  * instead of making remote RPC calls to distributed storage nodes.
  */
-class KVTStorageClient : public StorageClientBase<cpp2::GraphStorageServiceAsyncClient,
-                                                  thrift::ThriftClientManager<cpp2::GraphStorageServiceAsyncClient>> {
+class KVTStorageClient : public StorageClient {
  public:
   struct CommonRequestParam {
     GraphSpaceID space;

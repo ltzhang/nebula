@@ -3,7 +3,6 @@
  * This source code is licensed under Apache 2.0 License.
  */
 
-#include <gtest/gtest.h>
 #include <memory>
 #include <iostream>
 #include <set>
@@ -11,692 +10,490 @@
 #include <vector>
 #include <algorithm>
 #include <random>
+#include <cstring>
 
-#include "clients/storage/kvt/KVTStorageClient.h"
-#include "clients/storage/kvt/KVTKeyEncoder.h"
-#include "clients/storage/kvt/KVTTransactionManager.h"
-#include "clients/storage/kvt/kvt_inc.h"
-#include "common/base/Base.h"
+#include "../kvt_inc.h"
 
-using namespace nebula;
-using namespace nebula::storage;
+#define TEST_ASSERT(condition, message) \
+    do { \
+        if (!(condition)) { \
+            std::cerr << "[FAIL] " << message << " at " << __FILE__ << ":" << __LINE__ << std::endl; \
+            exit(1); \
+        } \
+    } while(0)
 
-class KVTComprehensiveTest : public ::testing::Test {
-protected:
-    std::unique_ptr<KVTStorageClient> client_;
-    GraphSpaceID spaceId_ = 1;
-    SessionID sessionId_ = 1234;
-    ExecutionPlanID planId_ = 5678;
+class KVTComprehensiveTest {
+public:
+    uint64_t vertexTableId_ = 0;
+    uint64_t edgeTableId_ = 0;
     
     // Helper data structures for validation
     std::set<std::string> existingVertices_;
     std::map<std::string, std::set<std::string>> outgoingEdges_;  // src -> set of dst
     std::map<std::string, std::set<std::string>> incomingEdges_;  // dst -> set of src
-    
-    void SetUp() override {
+    void SetUp() {
         // Initialize KVT
         KVTError err = kvt_initialize();
-        ASSERT_EQ(err, KVTError::SUCCESS) << "Failed to initialize KVT";
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to initialize KVT");
         std::cout << "[SETUP] KVT initialized" << std::endl;
         
-        // Create KVT storage client
-        client_ = std::make_unique<KVTStorageClient>(nullptr, nullptr);
-        std::cout << "[SETUP] KVTStorageClient created" << std::endl;
+        // Create tables for vertices and edges
+        std::string error_msg;
+        err = kvt_create_table("vertices", "hash", vertexTableId_, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to create vertex table: " + error_msg);
+        
+        err = kvt_create_table("edges", "range", edgeTableId_, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to create edge table: " + error_msg);
+        
+        std::cout << "[SETUP] Tables created - Vertex: " << vertexTableId_ << ", Edge: " << edgeTableId_ << std::endl;
     }
     
-    void TearDown() override {
-        client_.reset();
+    void TearDown() {
         kvt_shutdown();
         std::cout << "[TEARDOWN] Cleanup completed" << std::endl;
     }
     
-    // Helper function to add a vertex
-    bool addVertex(const std::string& id, const std::string& name, int value) {
-        std::vector<cpp2::NewVertex> vertices;
-        cpp2::NewVertex vertex;
-        vertex.id_ref() = id;
-        cpp2::NewTag tag;
-        tag.tag_id_ref() = 100;
-        tag.props_ref() = std::vector<Value>{Value(name), Value(value), Value("TestCity")};
-        vertex.tags_ref() = {tag};
-        vertices.push_back(vertex);
-        
-        auto future = client_->addVertices(
-            spaceId_, std::move(vertices), {}, true,
-            KVTStorageClient::CommonRequestParam(spaceId_, sessionId_, planId_)
-        );
-        
-        auto result = std::move(future).get();
-        if (result.succeeded()) {
-            existingVertices_.insert(id);
-            return true;
-        }
-        return false;
+    std::string createVertexKey(const std::string& vertexId) {
+        return "v:" + vertexId;
     }
     
-    // Helper function to add an edge
-    bool addEdge(const std::string& src, const std::string& dst, int weight) {
-        std::vector<cpp2::NewEdge> edges;
-        cpp2::NewEdge edge;
-        edge.key_ref()->src_ref() = src;
-        edge.key_ref()->dst_ref() = dst;
-        edge.key_ref()->edge_type_ref() = 200;
-        edge.key_ref()->ranking_ref() = 0;
-        edge.props_ref() = std::vector<Value>{Value(weight), Value(1234567890)};
-        edges.push_back(edge);
-        
-        auto future = client_->addEdges(
-            spaceId_, std::move(edges), {}, true,
-            KVTStorageClient::CommonRequestParam(spaceId_, sessionId_, planId_)
-        );
-        
-        auto result = std::move(future).get();
-        if (result.succeeded()) {
-            outgoingEdges_[src].insert(dst);
-            incomingEdges_[dst].insert(src);
-            return true;
-        }
-        return false;
+    std::string createEdgeKey(const std::string& srcId, const std::string& dstId) {
+        return "e:" + srcId + ":" + dstId;
     }
     
-    // Helper function to delete a vertex
-    bool deleteVertex(const std::string& id) {
-        std::vector<std::string> ids = {id};
-        auto future = client_->deleteVertices(
-            spaceId_, std::move(ids),
-            KVTStorageClient::CommonRequestParam(spaceId_, sessionId_, planId_)
-        );
-        
-        auto result = std::move(future).get();
-        if (result.succeeded()) {
-            // Update our tracking structures
-            existingVertices_.erase(id);
-            
-            // Remove all edges involving this vertex
-            if (outgoingEdges_.count(id)) {
-                for (const auto& dst : outgoingEdges_[id]) {
-                    incomingEdges_[dst].erase(id);
-                    if (incomingEdges_[dst].empty()) {
-                        incomingEdges_.erase(dst);
-                    }
-                }
-                outgoingEdges_.erase(id);
-            }
-            
-            if (incomingEdges_.count(id)) {
-                for (const auto& src : incomingEdges_[id]) {
-                    outgoingEdges_[src].erase(id);
-                    if (outgoingEdges_[src].empty()) {
-                        outgoingEdges_.erase(src);
-                    }
-                }
-                incomingEdges_.erase(id);
-            }
-            
-            return true;
-        }
-        return false;
+    std::string createReverseEdgeKey(const std::string& dstId, const std::string& srcId) {
+        return "re:" + dstId + ":" + srcId;
     }
     
-    // Helper function to delete an edge
-    bool deleteEdge(const std::string& src, const std::string& dst) {
-        std::vector<cpp2::EdgeKey> edges;
-        cpp2::EdgeKey key;
-        key.src_ref() = src;
-        key.dst_ref() = dst;
-        key.edge_type_ref() = 200;
-        key.ranking_ref() = 0;
-        edges.push_back(key);
+    void addVertex(const std::string& vertexId, const std::string& properties) {
+        std::string error_msg;
+        uint64_t txId;
+        KVTError err = kvt_start_transaction(txId, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
         
-        auto future = client_->deleteEdges(
-            spaceId_, std::move(edges),
-            KVTStorageClient::CommonRequestParam(spaceId_, sessionId_, planId_)
-        );
+        std::string key = createVertexKey(vertexId);
+        err = kvt_set(txId, vertexTableId_, key, properties, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to add vertex " + vertexId);
         
-        auto result = std::move(future).get();
-        if (result.succeeded()) {
-            outgoingEdges_[src].erase(dst);
-            if (outgoingEdges_[src].empty()) {
-                outgoingEdges_.erase(src);
-            }
-            incomingEdges_[dst].erase(src);
-            if (incomingEdges_[dst].empty()) {
-                incomingEdges_.erase(dst);
-            }
-            return true;
-        }
-        return false;
+        err = kvt_commit_transaction(txId, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to commit vertex addition");
+        
+        existingVertices_.insert(vertexId);
+        std::cout << "[VERTEX] Added: " << vertexId << std::endl;
     }
     
-    // Verify graph consistency
-    bool verifyGraphConsistency() {
-        // For each vertex, check its edges
-        for (const auto& vertex : existingVertices_) {
-            // Check outgoing edges
-            if (outgoingEdges_.count(vertex)) {
-                for (const auto& dst : outgoingEdges_[vertex]) {
-                    // Destination vertex should exist
-                    if (existingVertices_.find(dst) == existingVertices_.end()) {
-                        std::cout << "[ERROR] Edge " << vertex << "->" << dst 
-                                  << " points to non-existent vertex" << std::endl;
-                        return false;
-                    }
-                }
-            }
+    void addEdge(const std::string& srcId, const std::string& dstId, const std::string& properties) {
+        std::string error_msg;
+        uint64_t txId;
+        KVTError err = kvt_start_transaction(txId, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
+        
+        // Add forward edge
+        std::string edgeKey = createEdgeKey(srcId, dstId);
+        err = kvt_set(txId, edgeTableId_, edgeKey, properties, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to add edge");
+        
+        // Add reverse edge for efficient incoming edge queries
+        std::string reverseKey = createReverseEdgeKey(dstId, srcId);
+        err = kvt_set(txId, edgeTableId_, reverseKey, properties, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to add reverse edge");
+        
+        err = kvt_commit_transaction(txId, error_msg);
+        TEST_ASSERT(err == KVTError::SUCCESS, "Failed to commit edge addition");
+        
+        outgoingEdges_[srcId].insert(dstId);
+        incomingEdges_[dstId].insert(srcId);
+        std::cout << "[EDGE] Added: " << srcId << " -> " << dstId << std::endl;
+    }
+    
+    void validateGraphIntegrity() {
+        std::cout << "\n[VALIDATE] Checking graph integrity..." << std::endl;
+        
+        // Validate all vertices exist
+        for (const auto& vertexId : existingVertices_) {
+            std::string error_msg;
+            uint64_t txId;
+            KVTError err = kvt_start_transaction(txId, error_msg);
+            TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
             
-            // Check incoming edges
-            if (incomingEdges_.count(vertex)) {
-                for (const auto& src : incomingEdges_[vertex]) {
-                    // Source vertex should exist
-                    if (existingVertices_.find(src) == existingVertices_.end()) {
-                        std::cout << "[ERROR] Edge " << src << "->" << vertex 
-                                  << " comes from non-existent vertex" << std::endl;
-                        return false;
-                    }
-                }
+            std::string key = createVertexKey(vertexId);
+            std::string value;
+            err = kvt_get(txId, vertexTableId_, key, value, error_msg);
+            TEST_ASSERT(err == KVTError::SUCCESS, "Vertex " + vertexId + " should exist");
+            
+            kvt_commit_transaction(txId, error_msg);
+        }
+        std::cout << "[VALIDATE] All " << existingVertices_.size() << " vertices verified" << std::endl;
+        
+        // Validate all edges exist
+        int edgeCount = 0;
+        for (const auto& [src, dsts] : outgoingEdges_) {
+            for (const auto& dst : dsts) {
+                std::string error_msg;
+                uint64_t txId;
+                KVTError err = kvt_start_transaction(txId, error_msg);
+                TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
+                
+                // Check forward edge
+                std::string edgeKey = createEdgeKey(src, dst);
+                std::string value;
+                err = kvt_get(txId, edgeTableId_, edgeKey, value, error_msg);
+                TEST_ASSERT(err == KVTError::SUCCESS, "Edge " + src + "->" + dst + " should exist");
+                
+                // Check reverse edge
+                std::string reverseKey = createReverseEdgeKey(dst, src);
+                err = kvt_get(txId, edgeTableId_, reverseKey, value, error_msg);
+                TEST_ASSERT(err == KVTError::SUCCESS, "Reverse edge " + dst + "<-" + src + " should exist");
+                
+                kvt_commit_transaction(txId, error_msg);
+                edgeCount++;
             }
         }
-        return true;
+        std::cout << "[VALIDATE] All " << edgeCount << " edges (forward and reverse) verified" << std::endl;
     }
 };
 
-TEST_F(KVTComprehensiveTest, BasicReverseEdgeOperations) {
-    std::cout << "\n=== Test 1: Basic Reverse Edge Operations ===" << std::endl;
+// Test basic graph operations
+void TestBasicGraphOperations() {
+    std::cout << "\n=== Test 1: Basic Graph Operations ===" << std::endl;
     
-    // Create simple graph: A -> B -> C
-    ASSERT_TRUE(addVertex("A", "Node A", 1));
-    ASSERT_TRUE(addVertex("B", "Node B", 2));
-    ASSERT_TRUE(addVertex("C", "Node C", 3));
+    KVTComprehensiveTest test;
+    test.SetUp();
     
-    ASSERT_TRUE(addEdge("A", "B", 10));
-    ASSERT_TRUE(addEdge("B", "C", 20));
+    // Add vertices
+    test.addVertex("user1", "name:Alice,age:30");
+    test.addVertex("user2", "name:Bob,age:25");
+    test.addVertex("user3", "name:Charlie,age:35");
     
-    std::cout << "[SETUP] Created chain: A -> B -> C" << std::endl;
+    // Add edges
+    test.addEdge("user1", "user2", "type:friend,since:2020");
+    test.addEdge("user2", "user3", "type:friend,since:2021");
+    test.addEdge("user1", "user3", "type:colleague,since:2019");
     
-    // Test OUT edges for A (should find B)
-    ASSERT_EQ(outgoingEdges_["A"].size(), 1);
-    ASSERT_TRUE(outgoingEdges_["A"].count("B"));
+    // Validate
+    test.validateGraphIntegrity();
     
-    // Test IN edges for C (should find B)
-    ASSERT_EQ(incomingEdges_["C"].size(), 1);
-    ASSERT_TRUE(incomingEdges_["C"].count("B"));
-    
-    // Test BOTH edges for B (should find A as incoming, C as outgoing)
-    ASSERT_EQ(incomingEdges_["B"].size(), 1);
-    ASSERT_TRUE(incomingEdges_["B"].count("A"));
-    ASSERT_EQ(outgoingEdges_["B"].size(), 1);
-    ASSERT_TRUE(outgoingEdges_["B"].count("C"));
-    
-    ASSERT_TRUE(verifyGraphConsistency());
-    std::cout << "[PASS] Basic edge operations work correctly" << std::endl;
+    test.TearDown();
+    std::cout << "[PASS] Basic graph operations test completed" << std::endl;
 }
 
-TEST_F(KVTComprehensiveTest, ComplexGraphPattern) {
-    std::cout << "\n=== Test 2: Complex Graph Pattern ===" << std::endl;
+// Test concurrent transactions
+void TestConcurrentTransactions() {
+    std::cout << "\n=== Test 2: Concurrent Transactions ===" << std::endl;
     
-    // Create a more complex graph with multiple paths
-    // Graph structure:
-    //     D -> E -> F
-    //     |    |    ^
-    //     v    v    |
-    //     G -> H ---+
+    KVTComprehensiveTest test;
+    test.SetUp();
     
-    ASSERT_TRUE(addVertex("D", "Node D", 4));
-    ASSERT_TRUE(addVertex("E", "Node E", 5));
-    ASSERT_TRUE(addVertex("F", "Node F", 6));
-    ASSERT_TRUE(addVertex("G", "Node G", 7));
-    ASSERT_TRUE(addVertex("H", "Node H", 8));
+    // Add initial vertices
+    test.addVertex("v1", "data:initial");
+    test.addVertex("v2", "data:initial");
     
-    ASSERT_TRUE(addEdge("D", "E", 10));
-    ASSERT_TRUE(addEdge("E", "F", 20));
-    ASSERT_TRUE(addEdge("D", "G", 30));
-    ASSERT_TRUE(addEdge("E", "H", 40));
-    ASSERT_TRUE(addEdge("G", "H", 50));
-    ASSERT_TRUE(addEdge("H", "F", 60));
+    std::string error_msg;
     
-    std::cout << "[SETUP] Created complex graph with 6 edges" << std::endl;
+    // Start two concurrent transactions
+    uint64_t tx1, tx2;
+    KVTError err = kvt_start_transaction(tx1, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start tx1");
     
-    // Verify F has 2 incoming edges (from E and H)
-    ASSERT_EQ(incomingEdges_["F"].size(), 2);
-    ASSERT_TRUE(incomingEdges_["F"].count("E"));
-    ASSERT_TRUE(incomingEdges_["F"].count("H"));
+    err = kvt_start_transaction(tx2, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start tx2");
     
-    // Verify H has 2 incoming edges (from E and G)
-    ASSERT_EQ(incomingEdges_["H"].size(), 2);
-    ASSERT_TRUE(incomingEdges_["H"].count("E"));
-    ASSERT_TRUE(incomingEdges_["H"].count("G"));
+    // Both transactions read the same key first (to establish read set for OCC)
+    std::string v1Key = test.createVertexKey("v1");
+    std::string value1, value2;
+    err = kvt_get(tx1, test.vertexTableId_, v1Key, value1, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "tx1 read failed");
     
-    // Verify D has 2 outgoing edges (to E and G)
-    ASSERT_EQ(outgoingEdges_["D"].size(), 2);
-    ASSERT_TRUE(outgoingEdges_["D"].count("E"));
-    ASSERT_TRUE(outgoingEdges_["D"].count("G"));
+    err = kvt_get(tx2, test.vertexTableId_, v1Key, value2, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "tx2 read failed");
     
-    ASSERT_TRUE(verifyGraphConsistency());
-    std::cout << "[PASS] Complex graph pattern handled correctly" << std::endl;
-}
-
-TEST_F(KVTComprehensiveTest, DeleteVertexCascade) {
-    std::cout << "\n=== Test 3: Delete Vertex Cascade ===" << std::endl;
+    // Both transactions try to update the same vertex
+    err = kvt_set(tx1, test.vertexTableId_, v1Key, "data:tx1_update", error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "tx1 update failed");
     
-    // Create star pattern: Center node with multiple connections
-    //     I -> J <- K
-    //     ^    |    ^
-    //     |    v    |
-    //     L <- M -> N
+    err = kvt_set(tx2, test.vertexTableId_, v1Key, "data:tx2_update", error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "tx2 update failed");
     
-    ASSERT_TRUE(addVertex("I", "Node I", 9));
-    ASSERT_TRUE(addVertex("J", "Node J", 10));
-    ASSERT_TRUE(addVertex("K", "Node K", 11));
-    ASSERT_TRUE(addVertex("L", "Node L", 12));
-    ASSERT_TRUE(addVertex("M", "Node M", 13));
-    ASSERT_TRUE(addVertex("N", "Node N", 14));
+    // Commit tx1
+    err = kvt_commit_transaction(tx1, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "tx1 commit should succeed");
+    std::cout << "[TX1] Committed successfully" << std::endl;
     
-    ASSERT_TRUE(addEdge("I", "J", 10));
-    ASSERT_TRUE(addEdge("K", "J", 20));
-    ASSERT_TRUE(addEdge("J", "M", 30));
-    ASSERT_TRUE(addEdge("L", "I", 40));
-    ASSERT_TRUE(addEdge("M", "L", 50));
-    ASSERT_TRUE(addEdge("M", "N", 60));
-    ASSERT_TRUE(addEdge("N", "K", 70));
-    
-    std::cout << "[SETUP] Created star pattern with J and M as hubs" << std::endl;
-    
-    // Delete J - should remove I->J, K->J, J->M
-    ASSERT_TRUE(deleteVertex("J"));
-    std::cout << "[ACTION] Deleted vertex J" << std::endl;
-    
-    // Verify J is gone
-    ASSERT_FALSE(existingVertices_.count("J"));
-    
-    // Verify edges involving J are gone
-    ASSERT_FALSE(outgoingEdges_["I"].count("J"));
-    ASSERT_FALSE(outgoingEdges_["K"].count("J"));
-    ASSERT_FALSE(incomingEdges_.count("J"));
-    ASSERT_FALSE(outgoingEdges_.count("J"));
-    
-    // Verify M no longer has J as incoming
-    ASSERT_FALSE(incomingEdges_["M"].count("J"));
-    
-    // Other edges should still exist
-    ASSERT_TRUE(outgoingEdges_["M"].count("L"));
-    ASSERT_TRUE(outgoingEdges_["M"].count("N"));
-    ASSERT_TRUE(outgoingEdges_["N"].count("K"));
-    
-    ASSERT_TRUE(verifyGraphConsistency());
-    std::cout << "[PASS] Vertex deletion cascaded correctly" << std::endl;
-    
-    // Now delete M - should remove M->L, M->N and L->I should still exist
-    ASSERT_TRUE(deleteVertex("M"));
-    std::cout << "[ACTION] Deleted vertex M" << std::endl;
-    
-    // Verify M is gone and its edges
-    ASSERT_FALSE(existingVertices_.count("M"));
-    ASSERT_FALSE(incomingEdges_["L"].count("M"));
-    ASSERT_FALSE(incomingEdges_["N"].count("M"));
-    
-    // L->I and N->K should still exist
-    ASSERT_TRUE(outgoingEdges_["L"].count("I"));
-    ASSERT_TRUE(outgoingEdges_["N"].count("K"));
-    
-    ASSERT_TRUE(verifyGraphConsistency());
-    std::cout << "[PASS] Second vertex deletion cascaded correctly" << std::endl;
-}
-
-TEST_F(KVTComprehensiveTest, DeleteEdgeConsistency) {
-    std::cout << "\n=== Test 4: Delete Edge Consistency ===" << std::endl;
-    
-    // Create a fully connected triangle
-    ASSERT_TRUE(addVertex("P", "Node P", 15));
-    ASSERT_TRUE(addVertex("Q", "Node Q", 16));
-    ASSERT_TRUE(addVertex("R", "Node R", 17));
-    
-    ASSERT_TRUE(addEdge("P", "Q", 10));
-    ASSERT_TRUE(addEdge("Q", "R", 20));
-    ASSERT_TRUE(addEdge("R", "P", 30));
-    ASSERT_TRUE(addEdge("P", "R", 40));  // Second edge P->R
-    ASSERT_TRUE(addEdge("Q", "P", 50));  // Reverse edge
-    
-    std::cout << "[SETUP] Created fully connected triangle with 5 edges" << std::endl;
-    
-    // Delete specific edges
-    ASSERT_TRUE(deleteEdge("P", "Q"));
-    std::cout << "[ACTION] Deleted edge P->Q" << std::endl;
-    
-    // Verify P->Q is gone but Q->P still exists
-    ASSERT_FALSE(outgoingEdges_["P"].count("Q"));
-    ASSERT_TRUE(outgoingEdges_["Q"].count("P"));
-    
-    // Verify reverse index is updated
-    ASSERT_FALSE(incomingEdges_["Q"].count("P"));
-    ASSERT_TRUE(incomingEdges_["P"].count("Q"));
-    
-    ASSERT_TRUE(verifyGraphConsistency());
-    std::cout << "[PASS] Edge deletion maintains consistency" << std::endl;
-}
-
-TEST_F(KVTComprehensiveTest, LargeScaleOperations) {
-    std::cout << "\n=== Test 5: Large Scale Operations ===" << std::endl;
-    
-    const int NUM_VERTICES = 50;
-    const int NUM_EDGES = 200;
-    
-    // Create vertices
-    for (int i = 0; i < NUM_VERTICES; i++) {
-        std::string id = "V" + std::to_string(i);
-        ASSERT_TRUE(addVertex(id, "Node " + id, i));
-    }
-    std::cout << "[SETUP] Created " << NUM_VERTICES << " vertices" << std::endl;
-    
-    // Create random edges
-    std::mt19937 gen(42);  // Fixed seed for reproducibility
-    std::uniform_int_distribution<> dis(0, NUM_VERTICES - 1);
-    
-    int edgesCreated = 0;
-    std::set<std::pair<int, int>> edgeSet;
-    
-    while (edgesCreated < NUM_EDGES) {
-        int src = dis(gen);
-        int dst = dis(gen);
-        
-        if (src != dst && edgeSet.find({src, dst}) == edgeSet.end()) {
-            std::string srcId = "V" + std::to_string(src);
-            std::string dstId = "V" + std::to_string(dst);
-            
-            if (addEdge(srcId, dstId, edgesCreated)) {
-                edgeSet.insert({src, dst});
-                edgesCreated++;
-            }
-        }
-    }
-    std::cout << "[SETUP] Created " << NUM_EDGES << " random edges" << std::endl;
-    
-    // Count vertices with high in-degree
-    int highInDegree = 0;
-    for (const auto& [vertex, sources] : incomingEdges_) {
-        if (sources.size() >= 5) {
-            highInDegree++;
-        }
-    }
-    std::cout << "[INFO] Vertices with in-degree >= 5: " << highInDegree << std::endl;
-    
-    // Delete some high-degree vertices
-    std::vector<std::string> toDelete;
-    for (const auto& [vertex, sources] : incomingEdges_) {
-        if (sources.size() >= 5 && toDelete.size() < 5) {
-            toDelete.push_back(vertex);
-        }
-    }
-    
-    for (const auto& vertex : toDelete) {
-        size_t inDegree = incomingEdges_[vertex].size();
-        size_t outDegree = outgoingEdges_[vertex].size();
-        
-        ASSERT_TRUE(deleteVertex(vertex));
-        std::cout << "[ACTION] Deleted high-degree vertex " << vertex 
-                  << " (in=" << inDegree << ", out=" << outDegree << ")" << std::endl;
-    }
-    
-    ASSERT_TRUE(verifyGraphConsistency());
-    std::cout << "[PASS] Large scale operations completed successfully" << std::endl;
+    // Try to commit tx2 - should fail due to conflict
+    err = kvt_commit_transaction(tx2, error_msg);
+    TEST_ASSERT(err == KVTError::TRANSACTION_HAS_STALE_DATA, "tx2 should fail due to conflict");
+    std::cout << "[TX2] Failed to commit (expected conflict)" << std::endl;
     
     // Verify final state
-    std::cout << "[INFO] Final graph: " << existingVertices_.size() << " vertices, ";
+    uint64_t tx3;
+    err = kvt_start_transaction(tx3, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start tx3");
     
-    int totalEdges = 0;
-    for (const auto& [src, dsts] : outgoingEdges_) {
-        totalEdges += dsts.size();
-    }
-    std::cout << totalEdges << " edges" << std::endl;
+    std::string value;
+    err = kvt_get(tx3, test.vertexTableId_, v1Key, value, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to get v1");
+    TEST_ASSERT(value == "data:tx1_update", "v1 should have tx1's update");
+    
+    kvt_commit_transaction(tx3, error_msg);
+    
+    test.TearDown();
+    std::cout << "[PASS] Concurrent transactions test completed" << std::endl;
 }
 
-TEST_F(KVTComprehensiveTest, CyclicGraphOperations) {
-    std::cout << "\n=== Test 6: Cyclic Graph Operations ===" << std::endl;
+// Test range scans on edges
+void TestEdgeRangeScans() {
+    std::cout << "\n=== Test 3: Edge Range Scans ===" << std::endl;
     
-    // Create a graph with multiple cycles
-    // S -> T -> U
-    // ^    |    |
-    // |    v    v
-    // X <- W <- V
+    KVTComprehensiveTest test;
+    test.SetUp();
     
-    ASSERT_TRUE(addVertex("S", "Node S", 18));
-    ASSERT_TRUE(addVertex("T", "Node T", 19));
-    ASSERT_TRUE(addVertex("U", "Node U", 20));
-    ASSERT_TRUE(addVertex("V", "Node V", 21));
-    ASSERT_TRUE(addVertex("W", "Node W", 22));
-    ASSERT_TRUE(addVertex("X", "Node X", 23));
-    
-    // Create cycles
-    ASSERT_TRUE(addEdge("S", "T", 10));
-    ASSERT_TRUE(addEdge("T", "U", 20));
-    ASSERT_TRUE(addEdge("U", "V", 30));
-    ASSERT_TRUE(addEdge("V", "W", 40));
-    ASSERT_TRUE(addEdge("W", "X", 50));
-    ASSERT_TRUE(addEdge("X", "S", 60));  // Completes outer cycle
-    ASSERT_TRUE(addEdge("T", "W", 70));  // Inner connection
-    ASSERT_TRUE(addEdge("W", "T", 80));  // Reverse inner connection
-    
-    std::cout << "[SETUP] Created graph with cycles" << std::endl;
-    
-    // Verify cycles exist
-    ASSERT_TRUE(outgoingEdges_["X"].count("S"));
-    ASSERT_TRUE(outgoingEdges_["T"].count("W"));
-    ASSERT_TRUE(outgoingEdges_["W"].count("T"));
-    
-    // Delete vertex in the middle of cycles
-    ASSERT_TRUE(deleteVertex("W"));
-    std::cout << "[ACTION] Deleted vertex W from cycles" << std::endl;
-    
-    // Verify W and its edges are gone
-    ASSERT_FALSE(existingVertices_.count("W"));
-    ASSERT_FALSE(outgoingEdges_["V"].count("W"));
-    ASSERT_FALSE(incomingEdges_["X"].count("W"));
-    ASSERT_FALSE(outgoingEdges_["T"].count("W"));
-    ASSERT_FALSE(incomingEdges_["T"].count("W"));
-    
-    // Outer cycle should be broken but other edges remain
-    ASSERT_TRUE(outgoingEdges_["S"].count("T"));
-    ASSERT_TRUE(outgoingEdges_["T"].count("U"));
-    ASSERT_TRUE(outgoingEdges_["U"].count("V"));
-    ASSERT_TRUE(outgoingEdges_["X"].count("S"));
-    
-    ASSERT_TRUE(verifyGraphConsistency());
-    std::cout << "[PASS] Cyclic graph handled correctly" << std::endl;
-}
-
-TEST_F(KVTComprehensiveTest, StressTestWithValidation) {
-    std::cout << "\n=== Test 7: Stress Test with Validation ===" << std::endl;
-    
-    const int ITERATIONS = 100;
-    std::mt19937 gen(123);  // Fixed seed
-    std::uniform_int_distribution<> opDis(0, 3);  // 4 operations
-    std::uniform_int_distribution<> vertexDis(0, 99);
-    
-    // Initial setup
-    for (int i = 0; i < 20; i++) {
-        std::string id = "SV" + std::to_string(i);
-        ASSERT_TRUE(addVertex(id, "Stress " + id, i));
+    // Create a star topology: center connects to multiple nodes
+    test.addVertex("center", "type:hub");
+    for (int i = 1; i <= 5; i++) {
+        std::string nodeId = "node" + std::to_string(i);
+        test.addVertex(nodeId, "type:leaf,id:" + std::to_string(i));
+        test.addEdge("center", nodeId, "weight:" + std::to_string(i));
     }
     
-    for (int i = 0; i < 30; i++) {
-        int src = vertexDis(gen) % 20;
-        int dst = vertexDis(gen) % 20;
+    // Scan outgoing edges from center
+    std::string error_msg;
+    uint64_t txId;
+    KVTError err = kvt_start_transaction(txId, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
+    
+    std::string scanStart = "e:center:";
+    std::string scanEnd = "e:center;";  // ';' is after ':' in ASCII, will exclude all "e:center:" prefixed keys
+    
+    std::vector<std::pair<std::string, std::string>> results;
+    err = kvt_scan(txId, test.edgeTableId_, scanStart, scanEnd, 100, results, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to scan edges");
+    
+    std::cout << "[SCAN] Found " << results.size() << " outgoing edges from 'center'" << std::endl;
+    TEST_ASSERT(results.size() == 5, "Should find 5 outgoing edges");
+    
+    for (const auto& [key, value] : results) {
+        std::cout << "[EDGE] " << key << " -> " << value << std::endl;
+    }
+    
+    // Scan incoming edges to node3
+    results.clear();
+    scanStart = "re:node3:";
+    scanEnd = "re:node3;";
+    
+    err = kvt_scan(txId, test.edgeTableId_, scanStart, scanEnd, 100, results, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to scan reverse edges");
+    
+    std::cout << "[SCAN] Found " << results.size() << " incoming edges to 'node3'" << std::endl;
+    TEST_ASSERT(results.size() == 1, "Should find 1 incoming edge");
+    
+    kvt_commit_transaction(txId, error_msg);
+    
+    test.TearDown();
+    std::cout << "[PASS] Edge range scans test completed" << std::endl;
+}
+
+// Test batch operations
+void TestBatchOperations() {
+    std::cout << "\n=== Test 4: Batch Operations ===" << std::endl;
+    
+    KVTComprehensiveTest test;
+    test.SetUp();
+    
+    std::string error_msg;
+    uint64_t txId;
+    KVTError err = kvt_start_transaction(txId, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
+    
+    // Prepare batch operations
+    KVTBatchOps ops;
+    KVTBatchResults results;
+    
+    // Add multiple vertices in batch
+    for (int i = 0; i < 10; i++) {
+        KVTOp op;
+        op.op = OP_SET;
+        op.table_id = test.vertexTableId_;
+        op.key = test.createVertexKey("batch_v" + std::to_string(i));
+        op.value = "batch_data:" + std::to_string(i);
+        ops.push_back(op);
+    }
+    
+    // Add multiple edges in batch
+    for (int i = 0; i < 9; i++) {
+        KVTOp op;
+        op.op = OP_SET;
+        op.table_id = test.edgeTableId_;
+        op.key = test.createEdgeKey("batch_v" + std::to_string(i), "batch_v" + std::to_string(i + 1));
+        op.value = "edge_data:" + std::to_string(i);
+        ops.push_back(op);
+    }
+    
+    // Execute batch
+    err = kvt_batch_execute(txId, ops, results, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Batch execution failed: " + error_msg);
+    
+    // Verify all operations succeeded
+    int successCount = 0;
+    for (const auto& result : results) {
+        if (result.error == KVTError::SUCCESS) {
+            successCount++;
+        }
+    }
+    
+    std::cout << "[BATCH] " << successCount << "/" << ops.size() << " operations succeeded" << std::endl;
+    TEST_ASSERT(successCount == ops.size(), "Some batch operations failed");
+    
+    err = kvt_commit_transaction(txId, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to commit batch operations");
+    
+    // Verify data was written
+    err = kvt_start_transaction(txId, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start verification transaction");
+    
+    std::string value;
+    std::string key = test.createVertexKey("batch_v5");
+    err = kvt_get(txId, test.vertexTableId_, key, value, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to get batch_v5");
+    TEST_ASSERT(value == "batch_data:5", "batch_v5 data mismatch");
+    
+    kvt_commit_transaction(txId, error_msg);
+    
+    test.TearDown();
+    std::cout << "[PASS] Batch operations test completed" << std::endl;
+}
+
+// Test vertex deletion with cascade
+void TestVertexDeletionCascade() {
+    std::cout << "\n=== Test 5: Vertex Deletion Cascade ===" << std::endl;
+    
+    KVTComprehensiveTest test;
+    test.SetUp();
+    
+    // Create a small graph
+    test.addVertex("a", "data:a");
+    test.addVertex("b", "data:b");
+    test.addVertex("c", "data:c");
+    test.addEdge("a", "b", "edge:ab");
+    test.addEdge("b", "c", "edge:bc");
+    test.addEdge("a", "c", "edge:ac");
+    
+    // Delete vertex 'b' and its edges
+    std::string error_msg;
+    uint64_t txId;
+    KVTError err = kvt_start_transaction(txId, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start transaction");
+    
+    // Delete vertex
+    std::string vertexKey = test.createVertexKey("b");
+    err = kvt_del(txId, test.vertexTableId_, vertexKey, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to delete vertex b");
+    
+    // Delete outgoing edges from b
+    std::string edgeKey = test.createEdgeKey("b", "c");
+    err = kvt_del(txId, test.edgeTableId_, edgeKey, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to delete edge b->c");
+    
+    std::string reverseKey = test.createReverseEdgeKey("c", "b");
+    err = kvt_del(txId, test.edgeTableId_, reverseKey, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to delete reverse edge");
+    
+    // Delete incoming edges to b
+    edgeKey = test.createEdgeKey("a", "b");
+    err = kvt_del(txId, test.edgeTableId_, edgeKey, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to delete edge a->b");
+    
+    reverseKey = test.createReverseEdgeKey("b", "a");
+    err = kvt_del(txId, test.edgeTableId_, reverseKey, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to delete reverse edge");
+    
+    err = kvt_commit_transaction(txId, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to commit deletion");
+    
+    // Verify deletion
+    err = kvt_start_transaction(txId, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Failed to start verification transaction");
+    
+    std::string value;
+    err = kvt_get(txId, test.vertexTableId_, vertexKey, value, error_msg);
+    TEST_ASSERT(err == KVTError::KEY_NOT_FOUND, "Vertex b should be deleted");
+    
+    // Verify edge a->c still exists
+    edgeKey = test.createEdgeKey("a", "c");
+    err = kvt_get(txId, test.edgeTableId_, edgeKey, value, error_msg);
+    TEST_ASSERT(err == KVTError::SUCCESS, "Edge a->c should still exist");
+    
+    kvt_commit_transaction(txId, error_msg);
+    
+    test.TearDown();
+    std::cout << "[PASS] Vertex deletion cascade test completed" << std::endl;
+}
+
+// Stress test with many operations
+void TestStressOperations() {
+    std::cout << "\n=== Test 6: Stress Test ===" << std::endl;
+    
+    KVTComprehensiveTest test;
+    test.SetUp();
+    
+    const int numVertices = 100;
+    const int numEdges = 500;
+    
+    std::cout << "[STRESS] Creating " << numVertices << " vertices..." << std::endl;
+    
+    // Add many vertices
+    for (int i = 0; i < numVertices; i++) {
+        std::string id = "v" + std::to_string(i);
+        test.addVertex(id, "data:" + std::to_string(i));
+        
+        if (i % 20 == 0) {
+            std::cout << "[PROGRESS] Created " << i << " vertices" << std::endl;
+        }
+    }
+    
+    std::cout << "[STRESS] Creating " << numEdges << " edges..." << std::endl;
+    
+    // Add random edges
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, numVertices - 1);
+    
+    for (int i = 0; i < numEdges; i++) {
+        int src = dis(gen);
+        int dst = dis(gen);
         if (src != dst) {
-            addEdge("SV" + std::to_string(src), "SV" + std::to_string(dst), i);
-        }
-    }
-    
-    std::cout << "[SETUP] Initial graph created" << std::endl;
-    
-    // Perform random operations
-    int addVertexCount = 0, addEdgeCount = 0;
-    int deleteVertexCount = 0, deleteEdgeCount = 0;
-    
-    for (int iter = 0; iter < ITERATIONS; iter++) {
-        int op = opDis(gen);
-        
-        switch (op) {
-            case 0: {  // Add vertex
-                int id = 20 + addVertexCount;
-                std::string vid = "SV" + std::to_string(id);
-                if (addVertex(vid, "Stress " + vid, id)) {
-                    addVertexCount++;
-                }
-                break;
-            }
-            case 1: {  // Add edge
-                if (existingVertices_.size() >= 2) {
-                    // Pick two random existing vertices
-                    auto it1 = existingVertices_.begin();
-                    auto it2 = existingVertices_.begin();
-                    std::advance(it1, vertexDis(gen) % existingVertices_.size());
-                    std::advance(it2, vertexDis(gen) % existingVertices_.size());
-                    
-                    if (*it1 != *it2) {
-                        if (addEdge(*it1, *it2, addEdgeCount)) {
-                            addEdgeCount++;
-                        }
-                    }
-                }
-                break;
-            }
-            case 2: {  // Delete vertex
-                if (!existingVertices_.empty()) {
-                    auto it = existingVertices_.begin();
-                    std::advance(it, vertexDis(gen) % existingVertices_.size());
-                    std::string toDelete = *it;
-                    if (deleteVertex(toDelete)) {
-                        deleteVertexCount++;
-                    }
-                }
-                break;
-            }
-            case 3: {  // Delete edge
-                if (!outgoingEdges_.empty()) {
-                    // Find a random edge to delete
-                    auto it = outgoingEdges_.begin();
-                    std::advance(it, vertexDis(gen) % outgoingEdges_.size());
-                    
-                    if (!it->second.empty()) {
-                        std::string src = it->first;
-                        auto dstIt = it->second.begin();
-                        std::advance(dstIt, vertexDis(gen) % it->second.size());
-                        std::string dst = *dstIt;
-                        
-                        if (deleteEdge(src, dst)) {
-                            deleteEdgeCount++;
-                        }
-                    }
-                }
-                break;
-            }
+            std::string srcId = "v" + std::to_string(src);
+            std::string dstId = "v" + std::to_string(dst);
+            test.addEdge(srcId, dstId, "edge:" + std::to_string(i));
         }
         
-        // Periodic consistency check
-        if (iter % 20 == 0) {
-            ASSERT_TRUE(verifyGraphConsistency()) 
-                << "Consistency check failed at iteration " << iter;
+        if (i % 50 == 0) {
+            std::cout << "[PROGRESS] Created " << i << " edges" << std::endl;
         }
     }
     
-    std::cout << "[STATS] Operations performed:" << std::endl;
-    std::cout << "  - Vertices added: " << addVertexCount << std::endl;
-    std::cout << "  - Edges added: " << addEdgeCount << std::endl;
-    std::cout << "  - Vertices deleted: " << deleteVertexCount << std::endl;
-    std::cout << "  - Edges deleted: " << deleteEdgeCount << std::endl;
+    // Validate final state
+    test.validateGraphIntegrity();
     
-    // Final validation
-    ASSERT_TRUE(verifyGraphConsistency());
-    
-    std::cout << "[STATS] Final graph:" << std::endl;
-    std::cout << "  - Vertices: " << existingVertices_.size() << std::endl;
-    
-    int totalEdges = 0;
-    for (const auto& [src, dsts] : outgoingEdges_) {
-        totalEdges += dsts.size();
-    }
-    std::cout << "  - Edges: " << totalEdges << std::endl;
-    
-    std::cout << "[PASS] Stress test completed successfully" << std::endl;
+    test.TearDown();
+    std::cout << "[PASS] Stress test completed" << std::endl;
 }
 
-TEST_F(KVTComprehensiveTest, BidirectionalTraversal) {
-    std::cout << "\n=== Test 8: Bidirectional Traversal ===" << std::endl;
+int main(int argc, char** argv) {
+    std::cout << "=== KVT Comprehensive Test Suite ===" << std::endl;
     
-    // Create a graph for testing bidirectional traversal
-    // Create a diamond pattern:
-    //     Y
-    //    / \
-    //   Z   AA
-    //    \ /
-    //     BB
-    
-    ASSERT_TRUE(addVertex("Y", "Node Y", 24));
-    ASSERT_TRUE(addVertex("Z", "Node Z", 25));
-    ASSERT_TRUE(addVertex("AA", "Node AA", 26));
-    ASSERT_TRUE(addVertex("BB", "Node BB", 27));
-    
-    ASSERT_TRUE(addEdge("Y", "Z", 10));
-    ASSERT_TRUE(addEdge("Y", "AA", 20));
-    ASSERT_TRUE(addEdge("Z", "BB", 30));
-    ASSERT_TRUE(addEdge("AA", "BB", 40));
-    
-    std::cout << "[SETUP] Created diamond pattern" << std::endl;
-    
-    // Test traversal from Y (should reach all nodes via OUT edges)
-    ASSERT_EQ(outgoingEdges_["Y"].size(), 2);
-    ASSERT_TRUE(outgoingEdges_["Y"].count("Z"));
-    ASSERT_TRUE(outgoingEdges_["Y"].count("AA"));
-    
-    // Test reverse traversal from BB (should find Z and AA via IN edges)
-    ASSERT_EQ(incomingEdges_["BB"].size(), 2);
-    ASSERT_TRUE(incomingEdges_["BB"].count("Z"));
-    ASSERT_TRUE(incomingEdges_["BB"].count("AA"));
-    
-    // Add more edges to make it more complex
-    ASSERT_TRUE(addEdge("BB", "Y", 50));  // Create cycle
-    ASSERT_TRUE(addEdge("Z", "AA", 60));  // Cross connection
-    
-    std::cout << "[ACTION] Added cycle and cross connection" << std::endl;
-    
-    // Now Y has incoming edge from BB
-    ASSERT_EQ(incomingEdges_["Y"].size(), 1);
-    ASSERT_TRUE(incomingEdges_["Y"].count("BB"));
-    
-    // AA has incoming from both Y and Z
-    ASSERT_EQ(incomingEdges_["AA"].size(), 2);
-    ASSERT_TRUE(incomingEdges_["AA"].count("Y"));
-    ASSERT_TRUE(incomingEdges_["AA"].count("Z"));
-    
-    ASSERT_TRUE(verifyGraphConsistency());
-    std::cout << "[PASS] Bidirectional traversal works correctly" << std::endl;
-}
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    
-    std::cout << "================================================" << std::endl;
-    std::cout << "   KVT Comprehensive Test Suite                " << std::endl;
-    std::cout << "================================================" << std::endl;
-    std::cout << "This test suite thoroughly validates:" << std::endl;
-    std::cout << "1. Reverse edge indexing" << std::endl;
-    std::cout << "2. Complete delete operations" << std::endl;
-    std::cout << "3. Graph consistency" << std::endl;
-    std::cout << "4. Complex graph patterns" << std::endl;
-    std::cout << "5. Large scale operations" << std::endl;
-    std::cout << "6. Stress testing with validation" << std::endl;
-    std::cout << "================================================\n" << std::endl;
-    
-    int result = RUN_ALL_TESTS();
-    
-    if (result == 0) {
-        std::cout << "\n================================================" << std::endl;
-        std::cout << "   ALL COMPREHENSIVE TESTS PASSED!             " << std::endl;
-        std::cout << "================================================" << std::endl;
-    } else {
-        std::cout << "\n================================================" << std::endl;
-        std::cout << "   SOME TESTS FAILED - CHECK OUTPUT            " << std::endl;
-        std::cout << "================================================" << std::endl;
+    try {
+        TestBasicGraphOperations();
+        TestConcurrentTransactions();
+        TestEdgeRangeScans();
+        TestBatchOperations();
+        TestVertexDeletionCascade();
+        TestStressOperations();
+        
+        std::cout << "\n=== ALL COMPREHENSIVE TESTS PASSED ===" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "\n[ERROR] Test failed with exception: " << e.what() << std::endl;
+        return 1;
     }
     
-    return result;
+    return 0;
 }

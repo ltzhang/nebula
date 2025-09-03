@@ -117,4 +117,15 @@ DEFINE_uint32(
     0,
     "Background garbage clean workers, default number is 0 which means using hardware core size.");
 
+// KVT storage configuration flags
+DEFINE_bool(enable_kvt_storage, 
+            true, 
+            "Use KVT storage backend instead of distributed storage (default: true)");
+DEFINE_string(kvt_partition_method, 
+              "hash", 
+              "Partition method for KVT tables: 'hash' or 'range'");
+DEFINE_int32(kvt_transaction_retry_times, 
+             3, 
+             "Number of times to retry a transaction on conflict");
+
 DEFINE_bool(graph_use_vertex_key, false, "whether allow insert or query the vertex key");
