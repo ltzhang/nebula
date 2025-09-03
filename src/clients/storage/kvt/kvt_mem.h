@@ -64,6 +64,7 @@ typedef std::vector<KVTOpResult> KVTBatchResults;
 class KVTWrapper
 {
     public:
+        virtual ~KVTWrapper() = default;
         // Table management
         virtual KVTError create_table(const std::string& table_name, const std::string& partition_method, uint64_t& table_id, std::string& error_msg) = 0;
         virtual KVTError drop_table(uint64_t table_id, std::string& error_msg) = 0;
@@ -286,7 +287,7 @@ class KVTMemManagerBase : public KVTWrapper
             std::string partition_method;  // "hash" or "range"
             std::map<std::string, Entry> data;
             
-            Table(const std::string& n, const std::string& pm, uint64_t i) : name(n), partition_method(pm), id(i) {}
+            Table(const std::string& n, const std::string& pm, uint64_t i) : id(i), name(n), partition_method(pm) {}
         };
 
         struct Transaction {
@@ -438,6 +439,7 @@ class KVTMemManagerBase : public KVTWrapper
 
         KVTError list_tables(std::vector<std::pair<std::string, uint64_t>>& results, std::string& error_msg) override
         {
+            (void)error_msg;  // Unused parameter
             std::lock_guard<std::mutex> lock(global_mutex);
             results.clear();
             for (const auto& pair : tablename_to_id) {
@@ -447,6 +449,7 @@ class KVTMemManagerBase : public KVTWrapper
         }
 
         KVTError start_transaction(uint64_t& tx_id, std::string& error_msg) override {
+            (void)error_msg;  // Unused parameter
             std::lock_guard<std::mutex> lock(global_mutex);
             uint64_t tx_id_val = next_tx_id ++;
             transactions[tx_id_val] = std::make_unique<Transaction>(tx_id_val);

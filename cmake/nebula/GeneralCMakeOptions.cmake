@@ -2,7 +2,7 @@
 message(">>>> Options of ${PROJECT_NAME} <<<<")
 option(ENABLE_TESTING                   "Build unit tests" ON)
 option(ENABLE_CCACHE                    "Use ccache to speed up compiling" ON)
-option(ENABLE_WERROR                    "Regard warnings as errors" ON)
+option(ENABLE_WERROR                    "Regard warnings as errors" OFF)
 option(ENABLE_JEMALLOC                  "Use jemalloc as memory allocator" ON)
 option(ENABLE_ASAN                      "Build with AddressSanitizer" OFF)
 option(ENABLE_UBSAN                     "Build with UndefinedBehaviourSanitizer" OFF)
